@@ -1,0 +1,10 @@
+please take a look at my python script in src/test.py
+
+i am running a game in the mame emulator.  the game i am running is called dungeons of daggorath.  this game is old, from 1983.  it used to run on the tandy color computer.  game play is not done through a joystick or controller.  instead, text instructions are given to the game to conduct player actions.  i am sending text instructions to the game through the emulator via lua scripts.  i can do this because i started the emulator in console mode.  if i started the emulator from a command prompt, and i started it in console mode, the executable would begin running but then prompt the user for further instructions.  it expects these instructions be written in lua script.  mame provides an sdk that can be utilized in lua for controlling the game environment.  mame calls this sdk the Lua Scripting Interface.  you can find documentation for it at @https://docs.mamedev.org/luascript/index.html .
+
+so far, i am merely getting a reference to the keyboard manager and then using the keyboard to type two simple game instructions: 
+1. 'p l t' = 'pull left torch'
+2. 'u l' = 'use left'
+this makes the player pull their torch out of their bag, put it in their left hand, then use the torch to see the dungeon they are in.  you'll notice that i am making script execution sleep for several seconds, in between instructions.  i do this because, after giving one instruction, the game may not be ready to receive the next.  the difficulty i am having is in deciding how long i should actually be waiting.  i don't want to wait too long between instructions because that slows down game play and could result in game loss from not dealing with immediate threats fast enough.
+
+what i would like to do, instead of using time.sleep(), is inspect the state of the game to determine when to send the next instruction.  you don't need to worry about what that state is supposed to be or how to get it.  rather, what i need help with is reporting the game state, from the lua script executing within the emulator , back to the parent python process running the emulator.  can you help me figure that out?

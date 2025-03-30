@@ -1,0 +1,18 @@
+{
+    "folders": [
+        {
+            "path": "."
+        }
+    ],
+    "settings": {
+        "python.pythonPath": "${workspaceFolder}/env/Scripts/python.exe",
+        "terminal.integrated.defaultProfile.windows": "Ubuntu (WSL)",
+        "terminal.integrated.env.linux": {
+            "PS1": "\\[\\033[1;34m\\]\\W\\[\\033[0m\\]\\$ ",
+            "WSLENV": "PATH/w"
+        },
+        "python.analysis.extraPaths": [
+            "${workspaceFolder}/env/Lib/site-packages"
+        ]
+    }
+}
