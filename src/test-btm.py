@@ -46,6 +46,7 @@ process = subprocess.Popen(
     text=True
 )
 
+# Run the subprocess
 while True:
     if process.stderr is not None:
         error = process.stderr.readline()
