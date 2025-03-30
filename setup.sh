@@ -1,8 +1,8 @@
 #!/bin/bash
 # MAME and Lua Environment Setup Script
 
-# Set workspace path
-WORKSPACE="/mnt/c/Users/brand/Projects/Daggaroth"
+# Use current directory instead of absolute path
+WORKSPACE="$(pwd)"
 echo "Setting up environment for workspace: $WORKSPACE"
 
 # Install required packages
