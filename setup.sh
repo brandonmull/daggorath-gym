@@ -98,3 +98,15 @@ fi
 echo "Setup complete! You may need to run 'source ~/.bashrc' to apply prompt changes."
 echo "To activate your virtual environment, run: source $WORKSPACE/env/bin/activate"
 echo "To test MAME with Lua, run: mame -console"
+
+# Set up Lua environment variables using ~ for home directory
+export LUA_PATH="~/.mame/plugins/share/lua/5.3/?.lua;~/.mame/plugins/share/lua/5.3/?/init.lua;./?.lua;./?/init.lua"
+export LUA_CPATH="~/.mame/plugins/lib/lua/5.3/?.so;~/.mame/plugins/lib/lua/5.3/?/?.so;./?.so"
+export PATH="~/.mame/plugins/bin:$PATH"
+
+# Print the configured paths for verification
+echo "Lua module path: $LUA_PATH"
+echo "Lua C library path: $LUA_CPATH"
+echo "Updated PATH: $PATH"
+
+# You can add any additional setup steps below
