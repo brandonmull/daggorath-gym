@@ -8,11 +8,42 @@ echo "Setting up environment for workspace: $WORKSPACE"
 # Install required packages
 echo "Installing required packages..."
 sudo apt update
-sudo apt install -y lua5.3 liblua5.3-dev build-essential libreadline-dev mame luarocks
+sudo apt install -y lua5.3 liblua5.3-dev build-essential libreadline-dev mame luarocks lua-socket
 
 # Create MAME directories
 echo "Creating MAME directories..."
-mkdir -p ~/.mame/{roms,hash,samples,artwork,ctrlr,ini,fonts,cheat,crosshair,plugins,language,software,bgfx,cfg,nvram,inp,sta,snap,diff,comments}
+MAME_DIRS="roms hash samples artwork ctrlr ini fonts cheat crosshair plugins language software bgfx cfg nvram inp sta snap diff comments"
+
+# Function to check and create directory
+check_create_dir() {
+  local dir="$1"
+  if [ ! -d "$dir" ]; then
+    echo "Creating $dir..."
+    mkdir -p "$dir"
+    if [ ! -d "$dir" ]; then
+      echo "Error: Failed to create $dir. Please check permissions."
+      return 1
+    fi
+  else
+    echo "$dir already exists."
+  fi
+  return 0
+}
+
+# Create ~/.mame if it doesn't exist
+if ! check_create_dir ~/.mame; then
+  echo "Error: Unable to create main MAME directory."
+  exit 1
+fi
+
+# Create each subdirectory and verify
+for dir in $MAME_DIRS; do
+  if ! check_create_dir ~/.mame/$dir; then
+    echo "Error: Failed to create ~/.mame/$dir directory."
+    exit 1
+  fi
+done
+echo "MAME directories created successfully."
 
 # Copy and configure MAME ini
 echo "Configuring MAME..."
@@ -35,9 +66,21 @@ if [ ! -f ~/.mame/mame.ini ]; then
   sed -i 's|^bgfx_path.*|bgfx_path                 $HOME/.mame/bgfx;/usr/local/share/games/mame/bgfx;/usr/share/games/mame/bgfx|' ~/.mame/mame.ini
 fi
 
-# Create src/lua directory in workspace if it doesn't exist
+# Install ROMs to ~/.mame/roms
+echo "Setting up ROMs directory at $HOME/.mame/roms..."
+
+# Check for ROMs directory in workspace
+if [ -d "$WORKSPACE/roms" ]; then
+  echo "Found ROMs directory in workspace, copying to ~/.mame/roms..."
+  cp -r "$WORKSPACE/roms/"* ~/.mame/roms/ 2>/dev/null || true
+  echo "ROMs installed to $HOME/.mame/roms"
+else
+  echo "No ROMs directory found in workspace. Please ensure your ROMs (including daggorath.zip and coco3.zip) are placed in $HOME/.mame/roms"
+fi
+
+# Create src/emu directory in workspace if it doesn't exist
 echo "Setting up Lua directories..."
-mkdir -p "$WORKSPACE/src/lua"
+mkdir -p "$WORKSPACE/src/emu"
 mkdir -p "$WORKSPACE/env"
 
 # Install Lua packages to workspace env directory
@@ -48,10 +91,10 @@ luarocks install --tree="$WORKSPACE/env" luafilesystem
 
 # Link Lua scripts to MAME plugins directory
 echo "Linking Lua scripts to MAME plugins..."
-if [ -d "$WORKSPACE/src/lua" ] && [ "$(ls -A "$WORKSPACE/src/lua")" ]; then
-  ln -sf "$WORKSPACE/src/lua/"* ~/.mame/plugins/
+if [ -d "$WORKSPACE/src/emu" ] && [ "$(ls -A "$WORKSPACE/src/emu")" ]; then
+  ln -sf "$WORKSPACE/src/emu/"* ~/.mame/plugins/
 else
-  echo "No Lua scripts found in $WORKSPACE/src/lua"
+  echo "No Lua scripts found in $WORKSPACE/src/emu"
 fi
 
 # Update virtual environment activate script
@@ -61,7 +104,7 @@ if [ -f "$WORKSPACE/env/bin/activate" ]; then
   if ! grep -q "LUA_PATH" "$WORKSPACE/env/bin/activate"; then
     echo "
 # Lua environment
-export LUA_PATH=\"$WORKSPACE/env/share/lua/5.3/?.lua;$WORKSPACE/env/share/lua/5.3/?/init.lua;$WORKSPACE/src/lua/?.lua;$WORKSPACE/src/lua/?/init.lua;;\"
+export LUA_PATH=\"$WORKSPACE/env/share/lua/5.3/?.lua;$WORKSPACE/env/share/lua/5.3/?/init.lua;$WORKSPACE/src/emu/?.lua;$WORKSPACE/src/emu/?/init.lua;;\"
 export LUA_CPATH=\"$WORKSPACE/env/lib/lua/5.3/?.so;;\"
 " >> "$WORKSPACE/env/bin/activate"
 
@@ -73,31 +116,10 @@ export LUA_CPATH=\"$WORKSPACE/env/lib/lua/5.3/?.so;;\"
   fi
 fi
 
-# Update .bashrc for custom prompt
-echo "Setting up custom prompt..."
-if ! grep -q "custom_prompt" ~/.bashrc; then
-  echo '
-# Custom prompt function to show only env name
-function custom_prompt() {
-  # Check if in virtual environment
-  if [ -n "$VIRTUAL_ENV" ]; then
-    # Extract just the env name
-    local env_name=$(basename "$VIRTUAL_ENV")
-    PS1="($env_name) $ "
-  else
-    # Not in a virtual environment
-    PS1="$ "
-  fi
-}
-
-# Set the PROMPT_COMMAND to use our custom prompt
-PROMPT_COMMAND=custom_prompt
-' >> ~/.bashrc
-fi
-
-echo "Setup complete! You may need to run 'source ~/.bashrc' to apply prompt changes."
+echo "Setup complete!"
 echo "To activate your virtual environment, run: source $WORKSPACE/env/bin/activate"
 echo "To test MAME with Lua, run: mame -console"
+echo "ROMs are installed at: $HOME/.mame/roms"
 
 # Set up Lua environment variables using ~ for home directory
 export LUA_PATH="~/.mame/plugins/share/lua/5.3/?.lua;~/.mame/plugins/share/lua/5.3/?/init.lua;./?.lua;./?/init.lua"
@@ -108,5 +130,6 @@ export PATH="~/.mame/plugins/bin:$PATH"
 echo "Lua module path: $LUA_PATH"
 echo "Lua C library path: $LUA_CPATH"
 echo "Updated PATH: $PATH"
+echo "MAME ROM path: $HOME/.mame/roms"
 
 # You can add any additional setup steps below

@@ -32,4 +32,4 @@ local function create(space, socket, url)
     end
 end
 
-return { createObserver }
+return { create = create }

@@ -7,9 +7,9 @@ cmd = [
     "-autoboot_script", "./src/emu/testboot.lua",   # Lua script to run at startup
     
     # ROM and path options
-    "-rompath", "/usr/share/games/mame/roms",     # ROM search path
-    "-hashpath", "/usr/share/games/mame/hash",     # ROM search path
-    "-pluginspath", "/usr/share/games/mame/plugins", # Plugins path
+    # "-rompath", "/usr/share/games/mame/roms",     # ROM search path
+    # "-hashpath", "/usr/share/games/mame/hash",     # ROM search path
+    # "-pluginspath", "/usr/share/games/mame/plugins", # Plugins path
      
     # Video options
     "-window",                                    # Run in a window (not fullscreen)
