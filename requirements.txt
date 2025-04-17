@@ -1,0 +1,6 @@
+# Root requirements file
+# Import requirements from gym module
+-r gym/requirements.txt
+
+# Additional project-wide dependencies
+# None yet 

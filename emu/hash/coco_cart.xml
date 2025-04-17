@@ -1,0 +1,6 @@
+<softwarelist name="coco_cart" description="Tandy Radio Shack Color Computer cartridges">
+    <software name="daggorath">
+        <description>Dungeons of Daggorath (Shield Fix) (Aaron Oliver)</description>
+        <rom name="Dungeons of Daggorath (shield fix).rom" size="8192" crc="c985282a" sha1="9119ac4fa30b4b37da8619e6413c7fa01a39d6c4" />
+    </software>
+</softwarelist>

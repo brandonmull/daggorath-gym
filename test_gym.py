@@ -1,11 +1,11 @@
-import config
-import funcs
+import gym.config as config
+import gym.funcs as funcs
 import subprocess
 import time
 import signal
 import sys
 
-print("testing gym")
+print("testing gym", config.cmd)
 
 # Handle Ctrl+C gracefully
 def signal_handler(sig, frame):

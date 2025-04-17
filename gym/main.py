@@ -4,6 +4,8 @@ import numpy as np
 import subprocess
 import time
 import shlex
+import os
+from .paths import EMU_PATH
 
 class DaggorathEnv(gym.Env):
     def __init__(self):
@@ -20,7 +22,7 @@ class DaggorathEnv(gym.Env):
     def reset(self):
         # Start MAME with the Lua script and specify the ROM and hash paths
         command = [
-            "mame", "coco3", "dagorath",
+            "mame", "coco3", "daggorath",
             "-rompath", "C:/Emulators/Mame/roms",
             "-hashpath", "C:/Emulators/Mame/hash",
             "-debug"

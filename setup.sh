@@ -5,82 +5,142 @@
 WORKSPACE="$(pwd)"
 echo "Setting up environment for workspace: $WORKSPACE"
 
+# Debug MAME configuration
+debug_mame_config() {
+  echo "===== DEBUGGING MAME CONFIGURATION ====="
+  
+  # Check MAME version
+  MAME_VERSION=$(mame -help | grep "MAME v" | head -1)
+  echo "MAME version: $MAME_VERSION"
+  
+  # Check MAME default paths
+  echo "MAME default paths:"
+  mame -showconfig | grep path
+  
+  # Check if coco3 driver is available
+  echo "Checking if coco3 driver is available:"
+  mame -listdevices coco3 | head
+  
+  # Check if daggorath is in software lists
+  echo "Checking software lists for daggorath:"
+  mame -listsoftware | grep -i daggorath
+  
+  # Check hash path existence
+  echo "Checking hash directory:"
+  if [ -d "/usr/share/games/mame/hash" ]; then
+    echo "System hash directory exists"
+    echo "Files in hash directory:"
+    ls -la /usr/share/games/mame/hash
+    
+    # Check for coco_cart.xml specifically
+    if [ -f "/usr/share/games/mame/hash/coco_cart.xml" ]; then
+      echo "coco_cart.xml exists"
+      echo "Entries in coco_cart.xml:"
+      grep -A 5 -B 1 "daggorath" /usr/share/games/mame/hash/coco_cart.xml
+    else
+      echo "WARNING: coco_cart.xml not found in hash directory"
+    fi
+  else
+    echo "WARNING: System hash directory not found"
+  fi
+  
+  echo "========================================="
+}
+
+# Run MAME configuration debugging
+debug_mame_config
+
 # Install required packages
 echo "Installing required packages..."
 sudo apt update
 sudo apt install -y lua5.3 liblua5.3-dev build-essential libreadline-dev mame luarocks lua-socket
 
-# Create MAME directories
-echo "Creating MAME directories..."
-MAME_DIRS="roms hash samples artwork ctrlr ini fonts cheat crosshair plugins language software bgfx cfg nvram inp sta snap diff comments"
-
-# Function to check and create directory
-check_create_dir() {
-  local dir="$1"
-  if [ ! -d "$dir" ]; then
-    echo "Creating $dir..."
-    mkdir -p "$dir"
-    if [ ! -d "$dir" ]; then
-      echo "Error: Failed to create $dir. Please check permissions."
-      return 1
-    fi
-  else
-    echo "$dir already exists."
-  fi
-  return 0
-}
-
-# Create ~/.mame if it doesn't exist
-if ! check_create_dir ~/.mame; then
-  echo "Error: Unable to create main MAME directory."
-  exit 1
+# Check for Python installation
+echo "Checking for Python installation..."
+if ! command -v python3 &> /dev/null; then
+    echo "Python 3 not found. Installing Python..."
+    sudo apt install -y python3 python3-pip python3-venv
+else
+    echo "Python 3 is already installed: $(python3 --version)"
 fi
 
-# Create each subdirectory and verify
-for dir in $MAME_DIRS; do
-  if ! check_create_dir ~/.mame/$dir; then
-    echo "Error: Failed to create ~/.mame/$dir directory."
-    exit 1
-  fi
-done
-echo "MAME directories created successfully."
+# Define paths from paths.lua
+MAME_DIR="/usr/share/games/mame"
+MAME_ROMS_DIR="$MAME_DIR/roms"
+MAME_HASH_DIR="$MAME_DIR/hash"
+LUA_DIR="/usr/local/share/lua/5.3"
+LUA_C_DIR="/usr/local/lib/lua/5.3"
+SOCKET_HOST="127.0.0.1"
+SOCKET_PORT="15000"
 
-# Copy and configure MAME ini
-echo "Configuring MAME..."
-if [ ! -f ~/.mame/mame.ini ]; then
-  cp /etc/mame/mame.ini ~/.mame/
-  
-  # Update paths in mame.ini
-  sed -i 's|^rompath.*|rompath                   $HOME/.mame/roms;/usr/local/share/games/mame/roms;/usr/share/games/mame/roms|' ~/.mame/mame.ini
-  sed -i 's|^hashpath.*|hashpath                  $HOME/.mame/hash;/usr/local/share/games/mame/hash;/usr/share/games/mame/hash|' ~/.mame/mame.ini
-  sed -i 's|^samplepath.*|samplepath                $HOME/.mame/samples;/usr/local/share/games/mame/samples;/usr/share/games/mame/samples|' ~/.mame/mame.ini
-  sed -i 's|^artpath.*|artpath                   $HOME/.mame/artwork;/usr/local/share/games/mame/artwork;/usr/share/games/mame/artwork|' ~/.mame/mame.ini
-  sed -i 's|^ctrlrpath.*|ctrlrpath                 $HOME/.mame/ctrlr;/usr/local/share/games/mame/ctrlr;/usr/share/games/mame/ctrlr|' ~/.mame/mame.ini
-  sed -i 's|^inipath.*|inipath                   $HOME/.mame/ini;/usr/local/etc/mame;/etc/mame|' ~/.mame/mame.ini
-  sed -i 's|^fontpath.*|fontpath                  $HOME/.mame/fonts;/usr/local/share/games/mame/fonts;/usr/share/games/mame/fonts|' ~/.mame/mame.ini
-  sed -i 's|^cheatpath.*|cheatpath                 $HOME/.mame/cheat;/usr/local/share/games/mame/cheat;/usr/share/games/mame/cheat|' ~/.mame/mame.ini
-  sed -i 's|^crosshairpath.*|crosshairpath             $HOME/.mame/crosshair;/usr/local/share/games/mame/crosshair;/usr/share/games/mame/crosshair|' ~/.mame/mame.ini
-  sed -i 's|^pluginspath.*|pluginspath               $HOME/.mame/plugins;/usr/local/share/games/mame/plugins;/usr/share/games/mame/plugins|' ~/.mame/mame.ini
-  sed -i 's|^languagepath.*|languagepath              $HOME/.mame/language;/usr/local/share/games/mame/language;/usr/share/games/mame/language|' ~/.mame/mame.ini
-  sed -i 's|^swpath.*|swpath                    $HOME/.mame/software;/usr/local/share/games/mame/software;/usr/share/games/mame/software|' ~/.mame/mame.ini
-  sed -i 's|^bgfx_path.*|bgfx_path                 $HOME/.mame/bgfx;/usr/local/share/games/mame/bgfx;/usr/share/games/mame/bgfx|' ~/.mame/mame.ini
+echo "Using paths from paths.lua:"
+echo "  MAME directory: $MAME_DIR"
+echo "  MAME ROMs directory: $MAME_ROMS_DIR"
+echo "  MAME hash directory: $MAME_HASH_DIR"
+echo "  Lua directory: $LUA_DIR"
+echo "  Lua C directory: $LUA_C_DIR"
+echo "  Socket host: $SOCKET_HOST"
+echo "  Socket port: $SOCKET_PORT"
+
+# Check ROMs directory access
+if [ -w "$MAME_ROMS_DIR" ]; then
+  echo "You have write access to $MAME_ROMS_DIR"
+else
+  echo "WARNING: You don't have write access to $MAME_ROMS_DIR"
+  echo "You may need to use sudo to copy ROMs or modify permissions"
 fi
 
-# Install ROMs to ~/.mame/roms
-echo "Setting up ROMs directory at $HOME/.mame/roms..."
+# Check hash directory access
+if [ -w "$MAME_HASH_DIR" ]; then
+  echo "You have write access to $MAME_HASH_DIR"
+else
+  echo "WARNING: You don't have write access to $MAME_HASH_DIR"
+  echo "You may need to use sudo to copy hash files or modify permissions"
+fi
+
+# Copy ROMs to system MAME ROM directory
+echo "Setting up ROMs directory at $MAME_ROMS_DIR..."
+
+# Specifically check for daggorath ROM in emu/roms
+if [ -f "$WORKSPACE/emu/roms/daggorath.zip" ]; then
+  echo "Found daggorath.zip in workspace, copying to $MAME_ROMS_DIR..."
+  sudo cp "$WORKSPACE/emu/roms/daggorath.zip" "$MAME_ROMS_DIR/daggorath.zip"
+  echo "daggorath.zip installed to $MAME_ROMS_DIR"
+else
+  echo "daggorath.zip not found in $WORKSPACE/emu/roms"
+  echo "Checking for other ROMs..."
+fi
 
 # Check for ROMs directory in workspace
-if [ -d "$WORKSPACE/roms" ]; then
-  echo "Found ROMs directory in workspace, copying to ~/.mame/roms..."
-  cp -r "$WORKSPACE/roms/"* ~/.mame/roms/ 2>/dev/null || true
-  echo "ROMs installed to $HOME/.mame/roms"
+if [ -d "$WORKSPACE/emu/roms" ]; then
+  echo "Found ROMs directory in workspace, copying other ROMs to $MAME_ROMS_DIR..."
+  for rom in "$WORKSPACE/emu/roms/"*.zip; do
+    if [ -f "$rom" ] && [ "$(basename "$rom")" != "daggorath.zip" ]; then
+      sudo cp "$rom" "$MAME_ROMS_DIR/"
+      echo "Copied $(basename "$rom") to $MAME_ROMS_DIR"
+    fi
+  done
+  echo "ROMs installed to $MAME_ROMS_DIR"
 else
-  echo "No ROMs directory found in workspace. Please ensure your ROMs (including daggorath.zip and coco3.zip) are placed in $HOME/.mame/roms"
+  echo "No ROMs directory found in workspace. Please ensure your ROMs (including daggorath.zip and coco3.zip) are placed in $MAME_ROMS_DIR"
 fi
 
-# Create src/emu directory in workspace if it doesn't exist
+# Link Lua scripts to MAME plugins directory
+echo "Linking Lua scripts to MAME plugins..."
+if [ -d "$WORKSPACE/emu" ] && [ "$(ls -A "$WORKSPACE/emu" | grep -E '\.lua$')" ]; then
+  sudo mkdir -p "$MAME_DIR/plugins"
+  for lua_file in "$WORKSPACE/emu/"*.lua; do
+    if [ -f "$lua_file" ]; then
+      sudo cp "$lua_file" "$MAME_DIR/plugins/"
+      echo "Copied $(basename "$lua_file") to $MAME_DIR/plugins/"
+    fi
+  done
+else
+  echo "No Lua scripts found in $WORKSPACE/emu"
+fi
+
+# Create env directory in workspace if it doesn't exist
 echo "Setting up Lua directories..."
-mkdir -p "$WORKSPACE/src/emu"
 mkdir -p "$WORKSPACE/env"
 
 # Install Lua packages to workspace env directory
@@ -89,23 +149,15 @@ cd "$WORKSPACE"
 luarocks install --tree="$WORKSPACE/env" luasocket
 luarocks install --tree="$WORKSPACE/env" luafilesystem
 
-# Link Lua scripts to MAME plugins directory
-echo "Linking Lua scripts to MAME plugins..."
-if [ -d "$WORKSPACE/src/emu" ] && [ "$(ls -A "$WORKSPACE/src/emu")" ]; then
-  ln -sf "$WORKSPACE/src/emu/"* ~/.mame/plugins/
-else
-  echo "No Lua scripts found in $WORKSPACE/src/emu"
-fi
-
-# Update virtual environment activate script
+# Update virtual environment activate script with paths from paths.lua
 echo "Updating virtual environment..."
 if [ -f "$WORKSPACE/env/bin/activate" ]; then
   # Check if LUA_PATH is already in activate script
   if ! grep -q "LUA_PATH" "$WORKSPACE/env/bin/activate"; then
     echo "
 # Lua environment
-export LUA_PATH=\"$WORKSPACE/env/share/lua/5.3/?.lua;$WORKSPACE/env/share/lua/5.3/?/init.lua;$WORKSPACE/src/emu/?.lua;$WORKSPACE/src/emu/?/init.lua;;\"
-export LUA_CPATH=\"$WORKSPACE/env/lib/lua/5.3/?.so;;\"
+export LUA_PATH=\"$WORKSPACE/env/share/lua/5.3/?.lua;$WORKSPACE/env/share/lua/5.3/?/init.lua;$WORKSPACE/emu/?.lua;$WORKSPACE/emu/?/init.lua;$LUA_DIR/?.lua;$LUA_DIR/?/init.lua;;\"
+export LUA_CPATH=\"$WORKSPACE/env/lib/lua/5.3/?.so;$LUA_C_DIR/?.so;$LUA_C_DIR/?/core.so;;\"
 " >> "$WORKSPACE/env/bin/activate"
 
     # Add to deactivate function
@@ -119,17 +171,55 @@ fi
 echo "Setup complete!"
 echo "To activate your virtual environment, run: source $WORKSPACE/env/bin/activate"
 echo "To test MAME with Lua, run: mame -console"
-echo "ROMs are installed at: $HOME/.mame/roms"
+echo "ROMs are installed at: $MAME_ROMS_DIR"
+echo "Hash files should be placed at: $MAME_HASH_DIR"
 
-# Set up Lua environment variables using ~ for home directory
-export LUA_PATH="~/.mame/plugins/share/lua/5.3/?.lua;~/.mame/plugins/share/lua/5.3/?/init.lua;./?.lua;./?/init.lua"
-export LUA_CPATH="~/.mame/plugins/lib/lua/5.3/?.so;~/.mame/plugins/lib/lua/5.3/?/?.so;./?.so"
-export PATH="~/.mame/plugins/bin:$PATH"
+# Set up Lua environment variables using paths from paths.lua
+export LUA_PATH="$MAME_DIR/plugins/share/lua/5.3/?.lua;$MAME_DIR/plugins/share/lua/5.3/?/init.lua;$LUA_DIR/?.lua;$LUA_DIR/?/init.lua;./?.lua;./?/init.lua"
+export LUA_CPATH="$MAME_DIR/plugins/lib/lua/5.3/?.so;$MAME_DIR/plugins/lib/lua/5.3/?/?.so;$LUA_C_DIR/?.so;$LUA_C_DIR/?/core.so;./?.so"
+export PATH="$MAME_DIR/plugins/bin:$PATH"
 
 # Print the configured paths for verification
 echo "Lua module path: $LUA_PATH"
 echo "Lua C library path: $LUA_CPATH"
 echo "Updated PATH: $PATH"
-echo "MAME ROM path: $HOME/.mame/roms"
+echo "MAME ROM path: $MAME_ROMS_DIR"
+echo "MAME hash path: $MAME_HASH_DIR"
+echo "Socket configuration: $SOCKET_HOST:$SOCKET_PORT"
+
+# Verify ROMs
+echo "Verifying ROMs with MAME..."
+if command -v mame &> /dev/null; then
+  # Run MAME's verification tool to check ROMs against hash files
+  echo "Running ROM verification for installed ROMs..."
+  
+  # Specifically verify the ROMs we need
+  for rom in coco3 daggorath; do
+    echo "Verifying ROM: $rom"
+    mame -verifyroms $rom
+  done
+else
+  echo "MAME not found in PATH. Cannot verify ROMs."
+fi
+
+# Check specifically for the Daggorath ROM
+echo ""
+echo "Checking for Daggorath ROM..."
+if [ -f "$MAME_ROMS_DIR/daggorath.zip" ]; then
+    echo "Found daggorath.zip in $MAME_ROMS_DIR"
+else
+    echo "WARNING: daggorath.zip not found in $MAME_ROMS_DIR!"
+    echo "Please ensure you have the ROM file correctly named and placed in the MAME roms directory."
+    echo "Expected location: $MAME_ROMS_DIR/daggorath.zip"
+fi
+
+# Function to clean up unnecessary scripts
+cleanup_scripts() {
+    echo "===== CLEANING UP EXTRA SCRIPTS ====="
+    # Move extra scripts to a backup directory
+    mkdir -p .backup_scripts
+    mv check_rom_mame.sh debug_mame.sh verify_rom.py verify_rom_wsl.py .backup_scripts/ 2>/dev/null
+    echo "Extra scripts moved to .backup_scripts directory"
+}
 
 # You can add any additional setup steps below
