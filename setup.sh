@@ -53,7 +53,7 @@ debug_mame_config
 # Install required packages
 echo "Installing required packages..."
 sudo apt update
-sudo apt install -y lua5.3 liblua5.3-dev build-essential libreadline-dev mame luarocks lua-socket
+sudo apt install -y lua5.3 liblua5.3-dev build-essential libreadline-dev mame luarocks
 
 # Check for Python installation
 echo "Checking for Python installation..."
@@ -143,11 +143,17 @@ fi
 echo "Setting up Lua directories..."
 mkdir -p "$WORKSPACE/env"
 
-# Install Lua packages to workspace env directory
-echo "Installing Lua packages..."
+# Install Lua dependencies from rockspec file
+echo "Installing Lua dependencies from rockspec..."
 cd "$WORKSPACE"
-luarocks install --tree="$WORKSPACE/env" luasocket
-luarocks install --tree="$WORKSPACE/env" luafilesystem
+if [ -f "$WORKSPACE/emu/daggorath.rockspec" ]; then
+  luarocks install --tree="$WORKSPACE/env" --local "$WORKSPACE/emu/daggorath.rockspec"
+  echo "Lua dependencies installed from rockspec"
+else
+  echo "Rockspec file not found, installing essential packages individually..."
+  luarocks install --tree="$WORKSPACE/env" luasocket
+  luarocks install --tree="$WORKSPACE/env" luafilesystem
+fi
 
 # Update virtual environment activate script with paths from paths.lua
 echo "Updating virtual environment..."
@@ -156,8 +162,8 @@ if [ -f "$WORKSPACE/env/bin/activate" ]; then
   if ! grep -q "LUA_PATH" "$WORKSPACE/env/bin/activate"; then
     echo "
 # Lua environment
-export LUA_PATH=\"$WORKSPACE/env/share/lua/5.3/?.lua;$WORKSPACE/env/share/lua/5.3/?/init.lua;$WORKSPACE/emu/?.lua;$WORKSPACE/emu/?/init.lua;$LUA_DIR/?.lua;$LUA_DIR/?/init.lua;;\"
-export LUA_CPATH=\"$WORKSPACE/env/lib/lua/5.3/?.so;$LUA_C_DIR/?.so;$LUA_C_DIR/?/core.so;;\"
+export LUA_PATH=\"$MAME_DIR/plugins/?.lua;$MAME_DIR/plugins/?/init.lua;/usr/local/share/lua/5.3/?.lua;/usr/local/share/lua/5.3/?/init.lua;/usr/local/share/lua/5.4/?.lua;/usr/local/share/lua/5.4/?/init.lua;/usr/share/lua/5.3/?.lua;/usr/share/lua/5.3/?/init.lua;$WORKSPACE/env/share/lua/5.3/?.lua;$WORKSPACE/env/share/lua/5.3/?/init.lua;$WORKSPACE/emu/?.lua;./?.lua;./?/init.lua;;\"
+export LUA_CPATH=\"$MAME_DIR/plugins/?.so;/usr/local/lib/lua/5.3/?.so;/usr/local/lib/lua/5.4/?.so;/usr/lib/lua/5.3/?.so;/usr/lib/x86_64-linux-gnu/lua/5.3/?.so;$WORKSPACE/env/lib/lua/5.3/?.so;./?.so;;\"
 " >> "$WORKSPACE/env/bin/activate"
 
     # Add to deactivate function
@@ -175,8 +181,8 @@ echo "ROMs are installed at: $MAME_ROMS_DIR"
 echo "Hash files should be placed at: $MAME_HASH_DIR"
 
 # Set up Lua environment variables using paths from paths.lua
-export LUA_PATH="$MAME_DIR/plugins/share/lua/5.3/?.lua;$MAME_DIR/plugins/share/lua/5.3/?/init.lua;$LUA_DIR/?.lua;$LUA_DIR/?/init.lua;./?.lua;./?/init.lua"
-export LUA_CPATH="$MAME_DIR/plugins/lib/lua/5.3/?.so;$MAME_DIR/plugins/lib/lua/5.3/?/?.so;$LUA_C_DIR/?.so;$LUA_C_DIR/?/core.so;./?.so"
+export LUA_PATH="$MAME_DIR/plugins/?.lua;$MAME_DIR/plugins/?/init.lua;/usr/local/share/lua/5.3/?.lua;/usr/local/share/lua/5.3/?/init.lua;/usr/local/share/lua/5.4/?.lua;/usr/local/share/lua/5.4/?/init.lua;/usr/share/lua/5.3/?.lua;/usr/share/lua/5.3/?/init.lua;$WORKSPACE/env/share/lua/5.3/?.lua;$WORKSPACE/env/share/lua/5.3/?/init.lua;$WORKSPACE/emu/?.lua;./?.lua;./?/init.lua;;"
+export LUA_CPATH="$MAME_DIR/plugins/?.so;/usr/local/lib/lua/5.3/?.so;/usr/local/lib/lua/5.4/?.so;/usr/lib/lua/5.3/?.so;/usr/lib/x86_64-linux-gnu/lua/5.3/?.so;$WORKSPACE/env/lib/lua/5.3/?.so;./?.so;;"
 export PATH="$MAME_DIR/plugins/bin:$PATH"
 
 # Print the configured paths for verification
@@ -212,6 +218,136 @@ else
     echo "Please ensure you have the ROM file correctly named and placed in the MAME roms directory."
     echo "Expected location: $MAME_ROMS_DIR/daggorath.zip"
 fi
+
+# Check if coco_cart.xml needs to be created or updated
+echo ""
+echo "Checking for coco_cart.xml in system hash directory..."
+COCO_CART_XML="$MAME_HASH_DIR/coco_cart.xml"
+
+# Make sure xmlstarlet is installed
+if ! command -v xmlstarlet &> /dev/null; then
+    echo "xmlstarlet not found, installing..."
+    sudo apt update && sudo apt install -y xmlstarlet
+fi
+
+# Check if system file exists
+if [ -f "$COCO_CART_XML" ]; then
+    echo "System coco_cart.xml exists, checking for daggorath entry..."
+    
+    # Check if the file is valid XML
+    if ! xmlstarlet val "$COCO_CART_XML" &> /dev/null; then
+        echo "WARNING: $COCO_CART_XML is not valid XML. Creating a backup and fixing..."
+        sudo cp "$COCO_CART_XML" "${COCO_CART_XML}.broken"
+        echo "Original file backed up to ${COCO_CART_XML}.broken"
+        
+        # Create a new valid XML file
+        cat > /tmp/coco_cart.xml << EOL
+<?xml version="1.0"?>
+<softwarelist name="coco_cart" description="Tandy Radio Shack Color Computer cartridges">
+</softwarelist>
+EOL
+        sudo cp /tmp/coco_cart.xml "$COCO_CART_XML"
+        rm /tmp/coco_cart.xml
+    fi
+    
+    # Check if daggorath entry exists
+    if xmlstarlet sel -t -v "//software[@name='daggorath']" "$COCO_CART_XML" &> /dev/null; then
+        echo "Entry for 'daggorath' already exists in system coco_cart.xml, no update needed."
+    else
+        echo "No entry for 'daggorath' found, need to add it."
+        
+        # Create a backup
+        sudo cp "$COCO_CART_XML" "${COCO_CART_XML}.bak"
+        echo "Backed up system coco_cart.xml to ${COCO_CART_XML}.bak"
+        
+        # Check if dagorath (with one 'g') exists
+        if xmlstarlet sel -t -v "//software[@name='dagorath']" "$COCO_CART_XML" &> /dev/null; then
+            echo "Found 'dagorath' entry, will insert our 'daggorath' entry after it..."
+            
+            # We need to first create a temporary file with the entry
+            cat > /tmp/daggorath_entry.xml << EOL
+<software name="daggorath">
+    <description>Dungeons of Daggorath (Shield Fix) (Aaron Oliver)</description>
+    <rom name="Dungeons of Daggorath (shield fix).rom" size="8192" crc="c985282a" sha1="9119ac4fa30b4b37da8619e6413c7fa01a39d6c4" />
+</software>
+EOL
+            
+            # Use xmlstarlet to add the entry after dagorath
+            # Get the position of dagorath
+            DAGORATH_POS=$(xmlstarlet sel -t -v "count(//software[@name='dagorath']/preceding-sibling::software) + 1" "$COCO_CART_XML")
+            
+            # Insert our entry after that position
+            sudo xmlstarlet ed -L \
+                -s "//softwarelist" -t elem -n "software" -v "" \
+                -i "//software[last()]" -t attr -n "name" -v "daggorath" \
+                -s "//software[@name='daggorath']" -t elem -n "description" -v "Dungeons of Daggorath (Shield Fix) (Aaron Oliver)" \
+                -s "//software[@name='daggorath']" -t elem -n "rom" -v "" \
+                -i "//software[@name='daggorath']/rom" -t attr -n "name" -v "Dungeons of Daggorath (shield fix).rom" \
+                -i "//software[@name='daggorath']/rom" -t attr -n "size" -v "8192" \
+                -i "//software[@name='daggorath']/rom" -t attr -n "crc" -v "c985282a" \
+                -i "//software[@name='daggorath']/rom" -t attr -n "sha1" -v "9119ac4fa30b4b37da8619e6413c7fa01a39d6c4" \
+                "$COCO_CART_XML"
+            
+            # Now move it to the right position after dagorath
+            if [ "$DAGORATH_POS" -gt 0 ]; then
+                # Get the total count of software entries
+                TOTAL_SOFTWARE=$(xmlstarlet sel -t -v "count(//software)" "$COCO_CART_XML")
+                
+                # The last entry is our daggorath entry
+                # Move it to after the dagorath entry
+                sudo xmlstarlet ed -L \
+                    -m "//software[$TOTAL_SOFTWARE]" "//software[$DAGORATH_POS]" \
+                    "$COCO_CART_XML"
+                
+                echo "Successfully added 'daggorath' entry after 'dagorath' entry."
+            fi
+            
+            # Clean up
+            rm /tmp/daggorath_entry.xml
+        else
+            echo "No 'dagorath' entry found, inserting our 'daggorath' entry at the end..."
+            
+            # Simply add the entry at the end
+            sudo xmlstarlet ed -L \
+                -s "//softwarelist" -t elem -n "software" -v "" \
+                -i "//software[last()]" -t attr -n "name" -v "daggorath" \
+                -s "//software[@name='daggorath']" -t elem -n "description" -v "Dungeons of Daggorath (Shield Fix) (Aaron Oliver)" \
+                -s "//software[@name='daggorath']" -t elem -n "rom" -v "" \
+                -i "//software[@name='daggorath']/rom" -t attr -n "name" -v "Dungeons of Daggorath (shield fix).rom" \
+                -i "//software[@name='daggorath']/rom" -t attr -n "size" -v "8192" \
+                -i "//software[@name='daggorath']/rom" -t attr -n "crc" -v "c985282a" \
+                -i "//software[@name='daggorath']/rom" -t attr -n "sha1" -v "9119ac4fa30b4b37da8619e6413c7fa01a39d6c4" \
+                "$COCO_CART_XML"
+            
+            echo "Successfully added 'daggorath' entry at the end of the software list."
+        fi
+    fi
+else
+    echo "System coco_cart.xml doesn't exist, creating it..."
+    
+    # Create directory if it doesn't exist
+    sudo mkdir -p "$MAME_HASH_DIR"
+    
+    # Create minimal coco_cart.xml with daggorath entry
+    cat > /tmp/coco_cart.xml << EOL
+<?xml version="1.0"?>
+<softwarelist name="coco_cart" description="Tandy Radio Shack Color Computer cartridges">
+    <software name="daggorath">
+        <description>Dungeons of Daggorath (Shield Fix) (Aaron Oliver)</description>
+        <rom name="Dungeons of Daggorath (shield fix).rom" size="8192" crc="c985282a" sha1="9119ac4fa30b4b37da8619e6413c7fa01a39d6c4" />
+    </software>
+</softwarelist>
+EOL
+    
+    # Copy to system location
+    sudo cp /tmp/coco_cart.xml "$COCO_CART_XML"
+    echo "Created coco_cart.xml in system hash directory with 'daggorath' entry."
+    
+    # Clean up
+    rm /tmp/coco_cart.xml
+fi
+
+echo "coco_cart.xml setup complete"
 
 # Function to clean up unnecessary scripts
 cleanup_scripts() {
