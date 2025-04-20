@@ -1,6 +1,18 @@
 <softwarelist name="coco_cart" description="Tandy Radio Shack Color Computer cartridges">
     <software name="daggorath">
-        <description>Dungeons of Daggorath (Shield Fix) (Aaron Oliver)</description>
-        <rom name="Dungeons of Daggorath (shield fix).rom" size="8192" crc="c985282a" sha1="9119ac4fa30b4b37da8619e6413c7fa01a39d6c4" />
-    </software>
+		<description>Dungeons of Daggorath (Shield Fix)</description>
+		<year>1982</year>
+		<publisher>Tandy</publisher>
+		<notes><![CDATA[
+Laggy keyboard presses (verify)
+]]></notes>
+		<info name="developer" value="Dyna Micro" />
+		<info name="author" value="Douglas J. Morgan, Phil Landmeier, Keith Kiyohara, and April Landmeier" />
+		<info name="serial" value="26-3093" />
+		<part name="cart" interface="coco_cart">
+			<dataarea name="rom" size="8192">
+				<rom name="Dungeons of Daggorath (shield fix).rom" size="8192" crc="c985282a" sha1="9119ac4fa30b4b37da8619e6413c7fa01a39d6c4"/>
+			</dataarea>
+		</part>
+	</software>
 </softwarelist>

@@ -6,6 +6,7 @@ import time
 import shlex
 import os
 from .paths import EMU_PATH
+from .config import get_cmd
 
 class DaggorathEnv(gym.Env):
     def __init__(self):
@@ -13,68 +14,71 @@ class DaggorathEnv(gym.Env):
 
         # Define action and observation space
         # Assuming the game has a discrete action space
-        self.actionSpace = spaces.Discrete(4)  # Example: 4 possible actions
-        self.observationSpace = spaces.Box(low=0, high=255, shape=(1,), dtype=np.uint8)  # Example observation shape
+        self.action_space = spaces.Discrete(4)  # Example: 4 possible actions
+        self.observation_space = spaces.Box(low=0, high=255, shape=(1,), dtype=np.uint8)  # Example observation shape
 
         # Start MAME process
         self.process = None
 
-    def reset(self):
-        # Start MAME with the Lua script and specify the ROM and hash paths
-        command = [
-            "mame", "coco3", "daggorath",
-            "-rompath", "C:/Emulators/Mame/roms",
-            "-hashpath", "C:/Emulators/Mame/hash",
-            "-debug"
-        ]
+    def reset(self, **kwargs):
+        # Start MAME with configuration from config.py
+        command = get_cmd()
 
         try:
-            self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            stdout, stderr = self.process.communicate()  # Wait for the process to complete and capture output
-
-            if stderr:
-                print(f"Error output: {stderr}")  # Print any error messages
-            else:
-                print(f"Standard output: {stdout}")  # Print standard output if needed
+            self.process = subprocess.Popen(
+                command, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE, 
+                text=True, 
+                bufsize=1  # Line buffered
+            )
+            
+            # Initialize connection with the game (wait for it to start)
+            time.sleep(1)  # Allow some time for the game to start
+            
+            # Get initial observation
+            observation = self.get_observation()
+            info = {}
+            
+            return observation, info
 
         except FileNotFoundError as e:
-            print(f"FileNotFoundError: {e}")  # Print the specific error message
+            print(f"FileNotFoundError: {e}")
+            raise
         except Exception as e:
-            print(f"An error occurred: {e}")  # Print any other exceptions
-
-        # Reset the environment state
-        time.sleep(1)  # Allow some time for the game to start
-        return self.getObservation()
+            print(f"An error occurred: {e}")
+            raise
 
     def step(self, action):
-        # Send action to the game (this part may vary based on how actions are handled in the game)
-        self.sendAction(action)
+        # Send action to the game
+        self.send_action(action)
 
-        # Read the game state from the Lua script output
-        output = self.process.stdout.readline()
-        if output:
-            # Process the output to extract game state information
-            if output.startswith("heartrate:"):
-                heartRate = int(output.split(":")[1])
-                observation = np.array([heartRate], dtype=np.uint8)  # Example observation
-                reward = self.calculateReward(heartRate)  # Define your reward function
-                done = False  # Define your termination condition
-                return observation, reward, done, {}
+        # Read the game state from the MAME process output
+        observation = self.get_observation()
+        reward = self.calculate_reward(observation)
+        terminated = False  # Define termination condition
+        truncated = False   # Define truncation condition
+        info = {}           # Additional info
 
-        return self.getObservation(), 0, False, {}
+        return observation, reward, terminated, truncated, info
 
-    def getObservation(self):
+    def get_observation(self):
         # Return the current observation (e.g., heart rate)
+        # In a real implementation, this would read from the MAME process
         return np.array([0], dtype=np.uint8)  # Placeholder for initial observation
 
-    def sendAction(self, action):
+    def send_action(self, action):
         # Implement action sending logic to MAME (e.g., simulate key presses)
         pass  # Replace with actual action handling
 
-    def calculateReward(self, heartRate):
-        # Define your reward function based on heart rate or other game metrics
-        return heartRate  # Example reward based on heart rate
+    def calculate_reward(self, observation):
+        # Define your reward function based on observation
+        return 0  # Placeholder reward function
 
     def close(self):
-        if self.process:
+        if self.process and self.process.poll() is None:
             self.process.terminate()
+            try:
+                self.process.wait(timeout=5)  # Wait up to 5 seconds for process to terminate
+            except subprocess.TimeoutExpired:
+                self.process.kill()  # Force kill if it doesn't terminate

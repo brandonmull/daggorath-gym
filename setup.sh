@@ -234,22 +234,6 @@ fi
 if [ -f "$COCO_CART_XML" ]; then
     echo "System coco_cart.xml exists, checking for daggorath entry..."
     
-    # Check if the file is valid XML
-    if ! xmlstarlet val "$COCO_CART_XML" &> /dev/null; then
-        echo "WARNING: $COCO_CART_XML is not valid XML. Creating a backup and fixing..."
-        sudo cp "$COCO_CART_XML" "${COCO_CART_XML}.broken"
-        echo "Original file backed up to ${COCO_CART_XML}.broken"
-        
-        # Create a new valid XML file
-        cat > /tmp/coco_cart.xml << EOL
-<?xml version="1.0"?>
-<softwarelist name="coco_cart" description="Tandy Radio Shack Color Computer cartridges">
-</softwarelist>
-EOL
-        sudo cp /tmp/coco_cart.xml "$COCO_CART_XML"
-        rm /tmp/coco_cart.xml
-    fi
-    
     # Check if daggorath entry exists
     if xmlstarlet sel -t -v "//software[@name='daggorath']" "$COCO_CART_XML" &> /dev/null; then
         echo "Entry for 'daggorath' already exists in system coco_cart.xml, no update needed."
@@ -323,28 +307,9 @@ EOL
         fi
     fi
 else
-    echo "System coco_cart.xml doesn't exist, creating it..."
-    
-    # Create directory if it doesn't exist
-    sudo mkdir -p "$MAME_HASH_DIR"
-    
-    # Create minimal coco_cart.xml with daggorath entry
-    cat > /tmp/coco_cart.xml << EOL
-<?xml version="1.0"?>
-<softwarelist name="coco_cart" description="Tandy Radio Shack Color Computer cartridges">
-    <software name="daggorath">
-        <description>Dungeons of Daggorath (Shield Fix) (Aaron Oliver)</description>
-        <rom name="Dungeons of Daggorath (shield fix).rom" size="8192" crc="c985282a" sha1="9119ac4fa30b4b37da8619e6413c7fa01a39d6c4" />
-    </software>
-</softwarelist>
-EOL
-    
-    # Copy to system location
-    sudo cp /tmp/coco_cart.xml "$COCO_CART_XML"
-    echo "Created coco_cart.xml in system hash directory with 'daggorath' entry."
-    
-    # Clean up
-    rm /tmp/coco_cart.xml
+    echo "System coco_cart.xml doesn't exist."
+    echo "WARNING: This script will NOT create a new coco_cart.xml file."
+    echo "Please ensure the file exists in $MAME_HASH_DIR before running MAME with Daggorath."
 fi
 
 echo "coco_cart.xml setup complete"

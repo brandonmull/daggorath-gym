@@ -94,7 +94,7 @@ def extract_and_verify_rom(zip_path, xml_path, temp_dir='temp'):
 
 if __name__ == '__main__':
     rom_zip = 'emu/roms/daggorath.zip'
-    xml_file = 'emu/hash/daggorath_cart.xml'
+    xml_file = '/usr/share/games/mame/hash/coco_cart.xml'
     
     if len(sys.argv) > 1:
         rom_zip = sys.argv[1]
