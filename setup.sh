@@ -102,19 +102,19 @@ fi
 echo "Setting up ROMs directory at $MAME_ROMS_DIR..."
 
 # Specifically check for daggorath ROM in emu/roms
-if [ -f "$WORKSPACE/emu/roms/daggorath.zip" ]; then
+if [ -f "$WORKSPACE/daggorath_emu/roms/daggorath.zip" ]; then
   echo "Found daggorath.zip in workspace, copying to $MAME_ROMS_DIR..."
-  sudo cp "$WORKSPACE/emu/roms/daggorath.zip" "$MAME_ROMS_DIR/daggorath.zip"
+  sudo cp "$WORKSPACE/daggorath_emu/roms/daggorath.zip" "$MAME_ROMS_DIR/daggorath.zip"
   echo "daggorath.zip installed to $MAME_ROMS_DIR"
 else
-  echo "daggorath.zip not found in $WORKSPACE/emu/roms"
+  echo "daggorath.zip not found in $WORKSPACE/daggorath_emu/roms"
   echo "Checking for other ROMs..."
 fi
 
 # Check for ROMs directory in workspace
-if [ -d "$WORKSPACE/emu/roms" ]; then
+if [ -d "$WORKSPACE/daggorath_emu/roms" ]; then
   echo "Found ROMs directory in workspace, copying other ROMs to $MAME_ROMS_DIR..."
-  for rom in "$WORKSPACE/emu/roms/"*.zip; do
+  for rom in "$WORKSPACE/daggorath_emu/roms/"*.zip; do
     if [ -f "$rom" ] && [ "$(basename "$rom")" != "daggorath.zip" ]; then
       sudo cp "$rom" "$MAME_ROMS_DIR/"
       echo "Copied $(basename "$rom") to $MAME_ROMS_DIR"
@@ -127,16 +127,16 @@ fi
 
 # Link Lua scripts to MAME plugins directory
 echo "Linking Lua scripts to MAME plugins..."
-if [ -d "$WORKSPACE/emu" ] && [ "$(ls -A "$WORKSPACE/emu" | grep -E '\.lua$')" ]; then
+if [ -d "$WORKSPACE/daggorath_emu" ] && [ "$(ls -A "$WORKSPACE/daggorath_emu" | grep -E '\.lua$')" ]; then
   sudo mkdir -p "$MAME_DIR/plugins"
-  for lua_file in "$WORKSPACE/emu/"*.lua; do
+  for lua_file in "$WORKSPACE/daggorath_emu/"*.lua; do
     if [ -f "$lua_file" ]; then
       sudo cp "$lua_file" "$MAME_DIR/plugins/"
       echo "Copied $(basename "$lua_file") to $MAME_DIR/plugins/"
     fi
   done
 else
-  echo "No Lua scripts found in $WORKSPACE/emu"
+  echo "No Lua scripts found in $WORKSPACE/daggorath_emu"
 fi
 
 # Create env directory in workspace if it doesn't exist
@@ -323,4 +323,27 @@ cleanup_scripts() {
     echo "Extra scripts moved to .backup_scripts directory"
 }
 
-# You can add any additional setup steps below
+# WSLg PulseAudio sound setup
+echo ""
+echo "===== AUDIO SETUP ====="
+if [ -n "$WSL_INTEROP" ]; then
+    echo "WSL detected. Checking WSLg PulseAudio..."
+    if [ -S "/mnt/wslg/PulseServer" ]; then
+        echo "WSLg PulseAudio server found at /mnt/wslg/PulseServer"
+        echo "MAME will use '-sound pulse' for audio output (no extra packages needed)"
+        echo "Audio will route through your Windows speakers."
+    else
+        echo "WSLg PulseAudio not found. Audio will be unavailable."
+        echo "Use '-sound none' to run MAME without sound."
+    fi
+else
+    echo "Non-WSL environment. MAME will use the default ALSA backend."
+    echo "Install pulseaudio for the Pulse backend:"
+    echo "    sudo apt install -y pulseaudio"
+fi
+# Update SDL2 for better WSLg audio (reduces jitter)
+if [ -n "$WSL_INTEROP" ] && [ -S "/mnt/wslg/PulseServer" ]; then
+    echo "Updating SDL2 for improved WSLg audio stability..."
+    sudo apt install --only-upgrade -y libsdl2-2.0-0 2>/dev/null || true
+fi
+echo "========================="
