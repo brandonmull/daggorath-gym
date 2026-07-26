@@ -1,10 +1,71 @@
-# Daggorath Gym Environment
+# Daggorath Gym
 
-A Gymnasium environment for Dungeons of Daggorath using MAME.
+A Gymnasium environment for training an RL agent to play **Dungeons of Daggorath** (1982, Tandy TRS-80 Color Computer). The game runs inside MAME emulator, and the agent receives game state by reading RAM via Lua scripts and sends keystroke commands back.
+
+## Milestones
+
+1. ✅ **Functional gym environment** — MAME boots the game, Lua reports state
+2. 🔜 **Working socket communication** — Python ↔ Lua TCP bridge operational
+3. **Future** — Train an RL agent
+
+## Architecture
+
+```
+Python Gym Env (gym/main.py)
+    ↕ TCP socket (intended: 127.0.0.1:15000)
+MAME emulator (coco3 driver)
+    ↕
+Lua scripts (emu/*.lua) running inside MAME's embedded Lua engine
+    ↕
+Daggorath ROM (daggorath.zip — Shield Fix by Aaron Oliver)
+    ↕
+CoCo 3 system ROM (coco3.zip)
+```
+
+### Communication Flow (intended)
+
+- **Python** starts a TCP server
+- **MAME** boots with `-autoboot_script emu/autoboot.lua`
+- **autoboot.lua** connects TCP client to Python, registers periodic observer
+- **observer.lua** reads RAM state (heart rate, player XY/HP/stamina, game state) every 1s → JSON
+- **commands.lua** simulates keystrokes (arrows + ATTACK/MOVE/LOOK/CLIMB/USE/INCANT)
+- **Python** receives game state, sends actions back
+
+## Directory Structure
+
+```
+daggorath-gym/
+├── gym/                    # Python Gymnasium environment
+│   ├── main.py             # DaggorathEnv(gym.Env)
+│   ├── config.py           # MAME CLI invocation builder
+│   ├── funcs.py            # TCP socket helpers
+│   ├── paths.py            # Path resolution
+│   └── requirements.txt    # gymnasium, numpy
+├── emu/                    # Lua scripts (run inside MAME)
+│   ├── autoboot.lua        # Entry point, TCP client, observer registration
+│   ├── observer.lua        # RAM state reader → JSON over TCP
+│   ├── commands.lua        # Input simulation via MAME Lua API
+│   ├── paths.lua           # Centralized config (socket host/port, MAME paths)
+│   ├── setup_hash.py       # Copies MAME hash files to local dir
+│   ├── hash/coco_cart.xml  # MAME software list (includes Shield Fix)
+│   ├── roms/coco3.zip      # CoCo 3 system ROM
+│   ├── roms/daggorath.zip  # Daggorath ROM (Shield Fix)
+│   └── docs/               # Reference documentation
+│       ├── code.md         # Full 6809 disassembly with commentary
+│       ├── ram.md          # RAM memory map (100+ addresses, structures)
+│       ├── hardware.md     # CoCo hardware reference (PIA, SAM, vectors)
+│       └── setup.md        # Emulator architecture notes, Lua deps, build plans
+├── test_gym.py             # Integration test
+├── test_socket.py          # Standalone socket server/client test
+├── verify_rom.py           # ROM CRC32/SHA1 validation
+├── setup.sh                # WSL/Linux host MAME+ROM+Lua installer
+├── pyproject.toml          # Python package config
+└── requirements.txt        # Delegates to gym/requirements.txt
+```
 
 ## Installation
 
-1. Make sure you have MAME installed with the Dungeons of Daggorath ROM
+1. Install MAME with the Dungeons of Daggorath ROM (see `setup.sh` for WSL/Linux)
 2. Install the Python package:
    ```
    pip install -e .
@@ -14,66 +75,28 @@ A Gymnasium environment for Dungeons of Daggorath using MAME.
    python emu/setup_hash.py
    ```
 
-## Usage
+## Known Issues (PoC Blockers)
 
-```python
-import gym
-import daggorath_gym
+| # | Severity | Issue |
+|---|---|---|
+| 1 | **P0** | Port mismatch: Lua connects to `127.0.0.1:15000`, Python listens on `127.0.0.1:8080` |
+| 2 | **P0** | DaggorathEnv is mostly stubs: `get_observation()` returns `[0]`, `send_action()` is `pass` |
+| 3 | **P0** | funcs.py is send-only — no `recv_message()` to read JSON from Lua |
+| 4 | **P0** | No gym environment registration: `gym.make('Daggorath-v0')` won't resolve |
+| 5 | P1 | Several observer.lua RAM addresses may not match actual memory map (see `emu/docs/ram.md`) |
+| 6 | P1 | observer.lua redundantly reconnects on an already-connected socket |
 
-env = gym.make('Daggorath-v0')
-observation, info = env.reset()
+## Reference Documentation
 
-for _ in range(1000):
-    action = env.action_space.sample()  # Your agent's action
-    observation, reward, terminated, truncated, info = env.step(action)
-    
-    if terminated or truncated:
-        observation, info = env.reset()
+- **Code Disassembly**: [emu/docs/code.md](emu/docs/code.md)
+- **RAM Memory Map**: [emu/docs/ram.md](emu/docs/ram.md)
+- **CoCo Hardware**: [emu/docs/hardware.md](emu/docs/hardware.md)
+- **Emulator Setup Notes**: [emu/docs/setup.md](emu/docs/setup.md)
+- **Original Source**: https://www.computerarcheology.com/CoCo/Daggorath/
+- **MAME Lua Scripting**: https://docs.mamedev.org/luascript/index.html
 
-env.close()
-```
+## Environment Notes
 
-## Important Note on MAME Hash Files
-
-The environment uses a local copy of MAME hash files to prevent corruption of your system's files. If you experience any issues with ROM loading or corruption, run the setup script:
-
-```
-python emu/setup_hash.py
-```
-
-This will create local copies of the necessary hash files in the `emu/hash` directory.
-
-## Technical Details: Hash File Protection
-
-### The Issue
-
-MAME sometimes modifies hash files (like `coco_cart.xml`) when run with certain debug options. This can corrupt system-wide hash files located in `/usr/share/games/mame/hash/`, potentially causing issues with other MAME games.
-
-### Our Solution
-
-We've implemented several safeguards:
-
-1. **Local Hash Directory**: The environment now uses a local hash directory (`emu/hash/`) instead of the system-wide one.
-   
-2. **Setup Script**: The `emu/setup_hash.py` script helps users create and populate the local hash directory from their existing MAME installation.
-
-3. **Safety Checks**: The `test_gym.py` script checks for improper configurations that might lead to file corruption and warns users.
-
-### If Your Hash Files Were Corrupted
-
-If your system's hash files were corrupted, you can restore them by:
-
-1. Using your system's package manager to reinstall MAME
-   ```
-   sudo apt-get reinstall mame-data  # For Debian/Ubuntu
-   ```
-
-2. Downloading the original files from the MAME repository:
-   ```
-   wget https://raw.githubusercontent.com/mamedev/mame/master/hash/coco_cart.xml -O /usr/share/games/mame/hash/coco_cart.xml
-   ```
-
-3. Using the setup script to create a local copy that won't affect your system files:
-   ```
-   python emu/setup_hash.py
-   ``` 
+- **Requires MAME** — runs on any platform that supports MAME (Linux, macOS, Windows via WSL)
+- **Headless training**: Use `-video none -sound none` (already in config.py) — no display needed
+- **Setup**: Run `setup.sh` for automated MAME + ROM + Lua installation (Linux/WSL)
