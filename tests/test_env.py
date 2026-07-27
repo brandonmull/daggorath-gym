@@ -2,7 +2,7 @@
 """Continuous DaggorathEnv test — runs many steps so you can watch it work."""
 
 import os, sys, importlib, time
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import daggorath_gym
 importlib.reload(daggorath_gym)

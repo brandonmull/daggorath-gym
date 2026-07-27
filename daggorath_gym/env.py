@@ -2,7 +2,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 
-from .emu_bridge import MameBridge
+from .bridge import MameBridge
 
 
 class DaggorathEnv(gym.Env):

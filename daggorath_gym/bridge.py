@@ -24,7 +24,7 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_STATE_PORT = 15000
 DEFAULT_ACTION_PORT = 15001
 DEFAULT_TIMEOUT = 30  # seconds to wait for MAME to connect
-DEFAULT_SCRIPT = os.path.join(ROOT_PATH, "daggorath_emu", "autoboot.lua")
+DEFAULT_SCRIPT = os.path.join(ROOT_PATH, "emulation", "autoboot.lua")
 
 
 class MameBridge:
@@ -48,9 +48,9 @@ class MameBridge:
         self._timeout = timeout
 
         # Absolute paths – relative ones fail when MAME changes CWD
-        self._rompath = rompath or os.path.join(ROOT_PATH, "daggorath_emu", "roms")
-        self._hashpath = hashpath or os.path.join(ROOT_PATH, "daggorath_emu", "hash")
-        self._lua_script = lua_script or os.path.join(ROOT_PATH, "daggorath_emu", "autoboot.lua")
+        self._rompath = rompath or os.path.join(ROOT_PATH, "emulation", "roms")
+        self._hashpath = hashpath or os.path.join(ROOT_PATH, "emulation", "hash")
+        self._lua_script = lua_script or os.path.join(ROOT_PATH, "emulation", "autoboot.lua")
 
         self._sound = sound
         self._window = window

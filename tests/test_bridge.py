@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Test MameBridge with daggorath_gym (uses default daggorath_emu/autoboot.lua)."""
+"""Test MameBridge with daggorath_gym (uses default emulation/autoboot.lua)."""
 
 import os, sys, importlib
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Force-reload to bypass stale editable-install cache
 import daggorath_gym

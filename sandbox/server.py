@@ -24,8 +24,8 @@ TIMEOUT = 30
 
 def run() -> None:
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    rompath = os.path.join(root, "daggorath_emu", "roms")
-    hashpath = os.path.join(root, "daggorath_emu", "hash")
+    rompath = os.path.join(root, "emulation", "roms")
+    hashpath = os.path.join(root, "emulation", "hash")
     autoboot_script = os.path.join(root, "sandbox", "client.lua")
 
     # Bind state socket (port 15000)
