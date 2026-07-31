@@ -7,8 +7,7 @@ Short, focused experiments to validate design assumptions before they reach the 
 | `tcp-sockets/` | Validate MAME `emu.file` socket communication | ✅ Proven |
 | `typing-timing/` | Find minimum viable KEY_HOLD, CHAR_GAP, POST_ENTER_DELAY | Planned |
 | `command-buffering/` | Determine whether a command buffer is needed during TYPING | Planned |
-| `lua-module-loading/` | Verify `require()` works in MAME's Lua (vs `dofile()` fallback) | Planned |
-| `command-grammar/` | Verify the command space is fully discrete and correctly counted | Planned |
+| `lua-module-loading/` | Verify `require()` works in MAME's Lua (vs `dofile()` fallback) | ✅ Proven |
 
 ## Running a sandbox
 
