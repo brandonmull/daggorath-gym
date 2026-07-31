@@ -20,7 +20,7 @@ This assumes MAME adds the `-autoboot_script` directory to `package.path` automa
 
 Create a minimal module `sandbox/lua-module-loading/hello.lua`:
 ```lua
-return { ok = true, msg = "loaded" }
+return { loaded = true }
 ```
 
 Create an autoboot script that tries `require("hello")` and reports the result over the state socket (port 15000). The Python server checks whether the module loaded successfully.
@@ -35,10 +35,34 @@ If `require()` fails, test `dofile()` with an absolute path derived from the aut
 
 ## Success Criteria
 
-- [ ] `require("hello")` succeeds or fails (documented)
-- [ ] `package.path` contents logged and understood
-- [ ] Fallback mechanism identified if `require()` fails
-- [ ] Decision: use `require()`, `dofile()`, or modify `package.path` first
+- [x] `require("hello")` succeeds or fails (documented) — fails by default
+- [x] `package.path` contents logged and understood
+- [x] Fallback mechanism identified if `require()` fails — `dofile()` works, `os.getenv()` + prepend also works
+- [x] Decision: use `require()` with `os.getenv()` to prepend the module directory to `package.path`
+
+## Results
+
+| Approach | Result |
+|----------|--------|
+| `arg[0]` | ❌ `arg` global doesn't exist in MAME's Lua |
+| Varargs (`...`) | ❌ MAME passes zero arguments to autoboot scripts |
+| `-pluginspath` | ❌ Doesn't affect Lua's `package.path` |
+| `os.getenv("AUTOBOOT_DIR")` | ✅ Environment variables pass through from Python |
+| `require()` after prepending path | ✅ Works once the directory is in `package.path` |
+| `dofile("/abs/path")` | ✅ Always works |
+
+### Production Fix
+
+In `emulation/autoboot.lua`, add before any `require()` calls:
+
+```lua
+local emu_dir = os.getenv("DAGGORATH_EMU_DIR")
+if emu_dir then
+    package.path = emu_dir .. "/?.lua;" .. package.path
+end
+```
+
+`bridge.py` sets `DAGGORATH_EMU_DIR` in the MAME subprocess environment.
 
 ## Notes
 
