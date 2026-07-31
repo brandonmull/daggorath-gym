@@ -2,39 +2,41 @@
 
 ## Goal
 
-Find the minimum viable `KEY_HOLD`, `CHAR_GAP`, and `POST_ENTER_DELAY` values for typing command phrases into the CoCo text parser. The current guesses (3, 2, 10) in `emulation/commands.lua` need validation — they may be too fast (parser drops characters) or too slow (agent wastes frames waiting).
+Can we send typed commands to the in-game console? And if so, what — if any — timing coordination is required between the agent and the emulator?
 
-## Approach
+## Running
 
-### Test 1: Character registration
+```bash
+source .venv/bin/activate
+python sandbox/typing-timing/server.py
+```
 
-Type a single character per frame cycle with minimal hold time, then read the game's text buffer from RAM to see if it registered. Increase `KEY_HOLD` until the character appears reliably.
+Launches MAME with `-autoboot_delay 1` and the script below. Commands appear on the in-game console for visual verification.
 
-If the text buffer address is known from `emulation/docs/ram.md`, we can observe directly. If not, we can type a full command that has a visible side effect (e.g., `MOVE` changes `at_cell_x`/`at_cell_y`) and verify the game acted on it.
+## autoboot.lua
 
-### Test 2: Phrase typing speed
+```lua
+local frame = 0
+local nk = manager.machine.natkeyboard
+emu.add_machine_frame_notifier(function()
+    frame = frame + 1
+    if frame == 1 then
+        nk:post("\r")
+        nk:post("\r")
+        nk:post("PULL LEFT TORCH\r")
+        nk:post("USE LEFT TORCH\r")
+    end
+end)
+```
 
-Type a complete phrase (e.g., `"MOVE\n"`) at varying speeds:
-- Vary `CHAR_GAP` from 0 to 10 frames
-- Vary `POST_ENTER_DELAY` from 0 to 30 frames
-- After each attempt, read RAM to confirm the game processed the command
+## Findings
 
-Binary search: start fast, slow down until reliable.
+- `natkeyboard:post()` delivers whole `\r`-terminated strings. No per-character coordination is needed — post a complete command (including ENTER) in one call.
+- The CoCo's input buffer is a FIFO. Commands posted before the game is ready sit in the buffer and are consumed in order when the game's input loop catches up. This means the agent can post commands without waiting for the game to process the previous one.
+- No `KEY_HOLD`, `CHAR_GAP`, or `POST_ENTER_DELAY` is needed.
+- `-autoboot_delay "1"` is the minimum. The keyboard buffer isn't initialized before the 1-second mark.
+- Two blank `\r` posts are required before any real commands. The first `\r` is consumed by the title screen. Without the second, the first real command loses its first 1-2 characters.
 
-### Test 3: Multi-command throughput
+## Conclusion
 
-Type two commands in sequence (e.g., `MOVE\n` then `MOVE\n`) and verify both executed. This tests whether `POST_ENTER_DELAY` is long enough for the game to finish processing before accepting new input.
-
-## Success Criteria
-
-- [ ] `KEY_HOLD`: minimum frames for a single keystroke to register
-- [ ] `CHAR_GAP`: minimum frames between keystrokes without dropped characters
-- [ ] `POST_ENTER_DELAY`: minimum frames after ENTER before next command is accepted
-- [ ] Values documented in `emulation/docs/` or `plans/`
-
-## Notes
-
-- MAME runs at ~60 fps, so 1 frame ≈ 16.7ms
-- The game's text parser is on a 6809 at ~0.89 MHz — it may need generous delays
-- The old `autoboot.lua` used `HOLD = 3` for single keystrokes, which is our starting point
-- If the text buffer RAM address is known, this becomes a direct read test instead of a side-effect test
+The agent can post complete `\r`-terminated commands via `natkeyboard:post()` without any timing coordination. The only setup requirements are a 1-second autoboot delay and two blank `\r` priming posts before the first real command.
