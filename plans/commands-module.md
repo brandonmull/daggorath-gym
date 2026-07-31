@@ -20,21 +20,21 @@ This document addresses four design questions:
 ```
   environment starts bridge
     │
-    ├─ bridge opens action socket as server (15001)
+    ├─ bridge opens command socket as server (15001)
     │
     └─ bridge launches MAME as subprocess
         │
         └─ MAME runs autoboot
             │
-            └─ autoboot connects to action socket as read-only client
+            └─ autoboot connects to command socket as read-only client
 ```
 
-**Runtime** (action flow — Python sends, Lua receives):
+**Runtime** (command flow — Python sends, Lua receives):
 
 ```
 ┌─ Python ──────────────────────────────────────────┐
-│  env.py        selects action by index             │
-│  actions.py    defines ordered phrase list         │
+│  env.py        selects command by index            │
+│  commands.py   defines ordered phrase list         │
 │  bridge.py     sends 1 byte over TCP               │
 └──────────────────────┬────────────────────────────┘
                        │ 1 byte
@@ -45,7 +45,7 @@ This document addresses four design questions:
                          │ 1 byte
                          ▼
 ┌─ Lua (<module>.lua) ──────────────────────────────┐
-│  receives action index from socket                 │
+│  receives command index from socket                │
 │  looks up corresponding command phrase             │
 │  types characters into game text parser            │
 │  IDLE → TYPING → IDLE state machine               │
@@ -60,7 +60,7 @@ This document addresses four design questions:
 ```
 env.py / bridge.py                port 15001          <module>.lua             ──── (external) ────
 ──────────────────                ──────────          ───────────                              ────
-selects action by index                                                      
+selects command by index
 sends 1 byte ──────────────→  1 byte ──→  frame callback fires
                                             │
                                             ├─ IDLE: reads byte from socket
@@ -270,6 +270,6 @@ The following have been identified but not yet resolved:
 | Document | What It Contains |
 |----------|-----------------|
 | `emulation/docs/commands.md` | Original game manual + ROM-derived command grammar, object tables, incantation words |
-| `plans/gamestate-module.md` | Companion plan for the game state module |
+| `plans/state-module.md` | Companion plan for the game state module |
 | `plans/overview.md` | Project context and architecture |
 | `plans/commands-module.md` | Original working notes (preserved) |

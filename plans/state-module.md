@@ -272,7 +272,7 @@ def recv(self) -> GameState:
         ...
 ```
 
-The `send()` method stays unchanged — action commands are a separate module.
+The `send()` method stays unchanged — commands are handled by the separate `commands.py` module.
 
 `env.py` replaces dict access with typed attributes and uses the built-in `to_array()`:
 
@@ -453,4 +453,4 @@ class GameState:
 | `sandbox/README.md` | How the TCP socket communication works (emu.file, port architecture) |
 | `README.md` | Project overview, milestones, setup instructions |
 | `plans/overview.md` | Project context and architecture |
-| `plans/commands-module.md` | Companion plan for the action/command module |
+| `plans/commands-module.md` | Companion plan for the commands module |

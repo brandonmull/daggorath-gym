@@ -45,10 +45,10 @@ MAME lets us attach **Lua scripts** that run alongside the emulated machine. The
 
 ## Key Design Choices
 
-- **Two unidirectional TCP sockets** — port 15000 (MAME → Python, game state) and port 15001 (Python → MAME, action commands). Using MAME's built-in `emu.file` socket API. Proven in the `sandbox/` validation.
+- **Two unidirectional TCP sockets** — port 15000 (MAME → Python, game state) and port 15001 (Python → MAME, game commands). Using MAME's built-in `emu.file` socket API. Proven in the `sandbox/` validation.
 - **No external Lua dependencies** — MAME ships its own embedded Lua interpreter. LuaRocks packages cannot be loaded. All Lua scripts use only MAME's built-in APIs.
 - **Raw byte wire format** — no JSON on either socket. Compact, fast, and avoids serialization overhead on the emulated CPU.
-- **Flyweight pattern** — shared schema objects on both sides, per-frame/per-action value objects. Schema defines the contract once; instances are light.
+- **Flyweight pattern** — shared schema objects on both sides, per-frame/per-command value objects. Schema defines the contract once; instances are light.
 
 ## Reference Documents
 
@@ -59,5 +59,5 @@ MAME lets us attach **Lua scripts** that run alongside the emulated machine. The
 | `emulation/docs/code.md` | Full 6809 disassembly of the game |
 | `sandbox/README.md` | How the TCP socket communication works (emu.file, port architecture) |
 | `README.md` | Project overview, milestones, setup instructions |
-| `plans/gamestate-module.md` | Game state reporting module plan |
+| `plans/state-module.md` | Game state reporting module plan |
 | `plans/commands-module.md` | Action/command dispatch module plan (in progress) |
