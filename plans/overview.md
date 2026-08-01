@@ -57,7 +57,7 @@ MAME lets us attach **Lua scripts** that run alongside the emulated machine. The
 | `emulation/docs/commands.md` | Original game manual + ROM-derived command grammar, object tables, incantation words |
 | `emulation/docs/ram.md` | Memory map — every known RAM address and what it stores |
 | `emulation/docs/code.md` | Full 6809 disassembly of the game |
-| `sandbox/README.md` | How the TCP socket communication works (emu.file, port architecture) |
+| `sandbox/README.md` | Sandbox validation: TCP sockets, natkeyboard delivery, command buffering |
 | `README.md` | Project overview, milestones, setup instructions |
 | `plans/state-module.md` | Game state reporting module plan |
-| `plans/commands-module.md` | Action/command dispatch module plan (in progress) |
+| `plans/commands-module.md` | Action/command dispatch module plan |

@@ -47,8 +47,7 @@ This document addresses four design questions:
 ┌─ Lua (<module>.lua) ──────────────────────────────┐
 │  receives command index from socket                │
 │  looks up corresponding command phrase             │
-│  types characters into game text parser            │
-│  IDLE → TYPING → IDLE state machine               │
+│  posts command phrase via natkeyboard:post()       │
 └────────────────────────────────────────────────────┘
 
   Legend:
@@ -63,17 +62,11 @@ env.py / bridge.py                port 15001          <module>.lua             �
 selects command by index
 sends 1 byte ──────────────→  1 byte ──→  frame callback fires
                                             │
-                                            ├─ IDLE: reads byte from socket
-                                            │    looks up phrase by index
-                                            │    enters TYPING state
-                                            │
-                                            └─ TYPING: types next character
-                                                 ├─ presses key
-                                                 ├─ holds for N frames
-                                                 ├─ releases key
-                                                 └─ ... repeats for each character
-                                                      │
-                                                      └──→  final ENTER hands off to game's text parser
+                                            ├─ reads byte from socket
+                                            ├─ looks up phrase by index
+                                            └─ natkeyboard:post(phrase .. "\r")
+                                                 │
+                                                 └──→  game's text parser receives full command
 ```
 
 ---
@@ -145,65 +138,31 @@ The bot sends full-word command phrases (e.g., `"ATTACK LEFT"`) rather than abbr
 
 ### The Lua Module's Job
 
-The module receives a 1-byte action index from the action socket (port 15001), looks up the corresponding command phrase, and types it character by character into the game's text parser, ending with ENTER. This mirrors `gamestate.lua` — the module owns its own frame loop, and `autoboot.lua` only opens the socket and hands it off.
+The module receives a 1-byte action index from the action socket (port 15001), looks up the corresponding command phrase, and posts it to the game via MAME's `natkeyboard:post()`. This mirrors `gamestate.lua` — the module owns its own frame loop, and `autoboot.lua` only opens the socket and hands it off.
 
 ### Internal Mechanics
 
-The public API is `start(socket)` — the module tracks its own state and registers a per-frame callback. The core logic lives in `_on_frame()`, which alternates between two states:
-
-**Internal state variables:**
-
-| Variable | Purpose |
-|----------|---------|
-| `_socket` | The `emu.file("r")` socket |
-| `_typing` | `true` while a phrase is being typed (IDLE vs TYPING) |
-| `_phrase` | The current command phrase being typed |
-| `_char_index` | Position within the phrase (which character to type next) |
-| `_char_delay` | Frames to hold each character (from config) |
-
-**State machine pseudocode:**
+The public API is `start(socket)` — the module registers a per-frame callback. On each frame, it reads one byte from the socket and posts the corresponding `\r`-terminated phrase directly:
 
 ```
 _on_frame()
-    → if _typing:
-        type next character in _phrase
-          ├─ input.set_value(key, 1)      -- press key
-          ├─ hold for _char_delay frames
-          ├─ input.set_value(key, 0)      -- release key
-          └─ if more characters: stay in TYPING
-             else: type ENTER, set _typing = false
-    → else (IDLE):
-        read 1 byte from socket
-          → if byte available:
-              index = string.byte(raw)
-              _phrase = ACTIONS[index + 1]
-              _typing = true, _char_index = 1
-          → if no byte: do nothing (stay idle)
+    read 1 byte from socket
+      → if byte available:
+          index = string.byte(raw)
+          phrase = ACTIONS[index + 1]
+          nk:post(phrase .. "\r")
+      → if no byte: do nothing
 ```
 
-> **Note:** The character-level typing uses MAME's `input.set_value()` API with keycodes — the same mechanism used in the current `autoboot.lua`. Each character requires a press (value 1), a frame-counted hold, and a release (value 0). The hold duration controls how long the game has to register the keystroke.
+**No state machine is needed.** `natkeyboard:post()` delivers the entire `\r`-terminated string in one call. The CoCo's input FIFO buffers commands and the parser consumes them in order. The typing-timing and command-buffering sandboxes confirmed:
 
-### Open: Typing Timing
-
-Each character needs to be pressed and released with some frame delay. The current `autoboot.lua` uses a 3-frame hold for single keystrokes. For phrase typing, we need to determine:
-
-- How many frames between individual characters?
-- How many frames between ENTER and readiness for the next command?
-- Should these delays be configurable per-action or global?
-
-### Open: Idle vs Typing State Machine
-
-While a phrase is being typed (potentially spanning multiple frames), the module must not accept a new action:
-
-```
-IDLE → (receive byte) → TYPING → (phrase complete) → IDLE
-```
-
-During TYPING, should incoming bytes be buffered (queue of 1) or dropped? The RL agent may send actions faster than the module can type them.
+- Commands are delivered intact — no per-character timing or hold/release cycles
+- No Lua-side buffering is needed — `natkeyboard` operates below the game's ring buffer
+- `-autoboot_delay 1` and two blank `\r` priming posts are required before the first real command (handled in `autoboot.lua`)
 
 ### Open: Module Name
 
-Candidates: `commands`, `actions`, `input`. The module types command phrases into the game — "command" or "input" are both reasonable.
+Candidates: `commands`, `actions`, `input`. The module posts command phrases into the game — "command" or "input" are both reasonable.
 
 ---
 
@@ -257,13 +216,13 @@ def step(self, action_idx):
 
 The following have been identified but not yet resolved:
 
-- **Module name** — `commands`, `actions`, or `input`?
-- **Typing timing** — character hold duration, inter-character delay, post-ENTER delay
-- **State machine behavior** — buffer next action or drop it during TYPING?
+- ~~**Module name** — `commands` (resolved — file: `commands.lua`, `commands.py`)~~
+- ~~**Typing timing** — `natkeyboard:post()` delivers whole strings; no per-character timing needed (resolved — see sandbox/typing-timing)~~
+- ~~**State machine behavior** — no state machine needed; `natkeyboard` handles delivery (resolved — see sandbox/command-buffering)~~
 - **Action space scope** — full 152 or curated subset for initial training?
-- **Module loading strategy** — inline vs `require` vs `dofile` (joint decision with gamestate.lua)
-- **Character-level input API** — how to type individual characters into MAME
-- **Error handling** — invalid index received, or action arriving during TYPING state
+- ~~**Module loading strategy** — `require()` with `os.getenv("AUTOBOOT_DIR")` prepended to `package.path` (resolved — see sandbox/lua-module-loading)~~
+- ~~**Character-level input API** — use `natkeyboard:post()` instead of per-character `input.set_value()` (resolved — see sandbox/typing-timing)~~
+- **Error handling** — invalid index received
 
 ## Reference Documents
 

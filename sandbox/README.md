@@ -5,8 +5,8 @@ Short, focused experiments to validate design assumptions before they reach the 
 | Folder | Goal | Status |
 |--------|------|--------|
 | `tcp-sockets/` | Validate MAME `emu.file` socket communication | ✅ Proven |
-| `typing-timing/` | Find minimum viable KEY_HOLD, CHAR_GAP, POST_ENTER_DELAY | Planned |
-| `command-buffering/` | Determine whether a command buffer is needed during TYPING | Planned |
+| `typing-timing/` | Can we send typed commands to the in-game console? | ✅ Proven |
+| `command-buffering/` | How fast can we send commands? Do we need rate management? | ✅ Proven |
 | `lua-module-loading/` | Verify `require()` works in MAME's Lua (vs `dofile()` fallback) | ✅ Proven |
 
 ## Running a sandbox
