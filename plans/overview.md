@@ -14,7 +14,7 @@ MAME lets us attach **Lua scripts** that run alongside the emulated machine. The
 ┌─────────────────────────────────────────────────────────────┐
 │                      Python (our code)                      │
 │  ┌──────────┐    ┌──────────────┐    ┌───────────────────┐  │
-│  │ bridge.py │    │ game_state.py│    │     env.py        │  │
+│  │ bridge.py │    │ state.py    │    │     env.py        │  │
 │  │ TCP comms │    │ deserialize  │    │ Gymnasium Env     │  │
 │  │           │    │ game state   │    │ step() / reset()  │  │
 │  └─────┬─────┘    └──────▲───────┘    └───────────────────┘  │
@@ -31,7 +31,7 @@ MAME lets us attach **Lua scripts** that run alongside the emulated machine. The
 │  │  ┌────────────────────────┐  │                             │
 │  │  │   Lua scripts           │  │                             │
 │  │  │   - autoboot.lua        │  │                             │
-│  │  │   - gamestate.lua (new) │  │                             │
+│  │  │   - state.lua           │  │                             │
 │  │  └────────────────────────┘  │                             │
 │  │  ┌────────────────────────┐  │                             │
 │  │  │   Emulated CoCo 3       │  │                             │

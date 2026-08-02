@@ -32,7 +32,7 @@ This document addresses four design questions:
 ```
 ┌─ Lua ────────────────────────────────────────────┐
 │  autoboot.lua   opens the write socket            │
-│  gamestate.lua  samples game state each frame     │
+│  state.lua      samples game state each frame     │
 │                 reads known RAM addresses         │
 │                 writes raw bytes to socket        │
 └──────────────────────┬────────────────────────────┘
@@ -45,7 +45,7 @@ This document addresses four design questions:
                          ▼
 ┌─ Python ─────────────────────────────────────────┐
 │  bridge.py      receives bytes from socket        │
-│  game_state.py  deserializes into GameState       │
+│  state.py       deserializes into DaggorathState  │
 │  env.py         converts to array for RL agent    │
 └───────────────────────────────────────────────────┘
 
@@ -56,8 +56,8 @@ This document addresses four design questions:
 ## Data Flow
 
 ```
-autoboot.lua                  gamestate.lua                    port 15000          bridge.py / env.py
-─────────────                 ─────────────                    ──────────          ─────────────────
+autoboot.lua                  state.lua                        port 15000          bridge.py / env.py
+─────────────                 ─────────                        ──────────          ─────────────────
 opens write socket ──────→   begins watching
                               │
                               ├─ acquires CPU memory space (lazy)
@@ -70,7 +70,7 @@ opens write socket ──────→   begins watching
                                 │    ├─ reads u8 or u16 value    ←──  6809 RAM
                                 │    └─ builds byte string
                                 │
-                                └─ writes bytes to socket ────────→  raw bytes  →  deserializes to GameState
+                                └─ writes bytes to socket ────────→  raw bytes  →  deserializes to DaggorathState
                                                                                    │
                                                                                    ├─ attribute access
                                                                                    ├─ converts to array
@@ -126,6 +126,17 @@ Three competing principles were considered before settling on **hierarchical**:
 
 3. **Hierarchical (chosen)** — broad context to immediate survival. Like zooming in on a map: first the world (game mode, dungeon floor), then the region (cell, heading, light), then the character sheet (weight, strength, heart), then the life-or-death moment (fainting, wizard dead). This is the most intuitive reading order for a state dump.
 
+### Module Names
+
+| Side | File | Module/Class | Notes |
+|------|------|-------------|-------|
+| Lua | `state.lua` | `state` (module table) | Short, unambiguous within the emulation directory — it's the only state-related file there |
+| Python | `state.py` | `DaggorathState`, `DaggorathStateSchema` | `Daggorath` prefix avoids naming collisions with MAME's internal state objects or a generic Python `GameState` |
+
+The Lua module uses `state` rather than a longer name like `gamestate` because the emulation directory provides sufficient context — there's nothing else called "state" in that scope. The Python module uses `DaggorathState` rather than `GameState` because `GameState` is a generic term that could collide with other game state classes in the Python ecosystem. The `Daggorath` prefix makes the class name unique and self-documenting.
+
+The module's public API is a single function: `state.watch(socket, config)`. This mirrors `commands.start(socket)` — both modules follow the same pattern: autoboot opens the socket and hands it off with a one-line call, and the module owns its own frame loop.
+
 ---
 
 ## 2. How Is State Represented?
@@ -172,9 +183,9 @@ The schema embodies the **Flyweight pattern**: what's shared across every frame 
 | Field names | Yes — same every frame | Schema (one instance) |
 | Byte offsets | Yes — same every frame | Schema (one instance) |
 | Type converters (u8, u16) | Yes — same every frame | Schema (one instance) |
-| Actual values | No — different every frame | `GameState` (one per frame) |
+| Actual values | No — different every frame | `DaggorathState` (one per frame) |
 
-The schema is created once at module import and shared by every `GameState` instance. Each `GameState` is extremely light — an immutable container with `__slots__` (no dictionary overhead) and only 12 integer attributes. Thousands can be created and discarded during training without memory pressure.
+The schema is created once at module import and shared by every `DaggorathState` instance. Each `DaggorathState` is extremely light — an immutable container with `__slots__` (no dictionary overhead) and only 12 integer attributes. Thousands can be created and discarded during training without memory pressure.
 
 ### Performance
 
@@ -182,7 +193,7 @@ The schema is created once at module import and shared by every `GameState` inst
 |--------|------|-----------|
 | Bytes per observation | ~250 | 16 |
 | Lua CPU cost | `string.format` + JSON assembly | `string.char(read_u8(...))` |
-| Python CPU cost | `json.loads()` | `GameState(line)` — tuple unpack |
+| Python CPU cost | `json.loads()` | `DaggorathState(line)` — tuple unpack |
 | Max reporting rate | Every 60 frames (1/sec) | Every frame (60/sec) |
 
 ---
@@ -193,7 +204,7 @@ The schema is created once at module import and shared by every `GameState` inst
 
 Two approaches were considered for integrating the reporting logic with `autoboot.lua`:
 
-- **Option A (chosen):** The module owns the frame loop. `autoboot.lua` opens the socket and calls `gamestate.watch(socket, config)` — one line. The module registers the frame notifier, acquires the CPU memory space, reads RAM addresses, serializes bytes, and writes to the socket. `autoboot.lua` doesn't know about any of this.
+- **Option A (chosen):** The module owns the frame loop. `autoboot.lua` opens the socket and calls `state.watch(socket, config)` — one line. The module registers the frame notifier, acquires the CPU memory space, reads RAM addresses, serializes bytes, and writes to the socket. `autoboot.lua` doesn't know about any of this.
 
 - **Option B:** Autoboot drives. The module exposes a pure `sample(memspace)` function. Autoboot registers the frame callback, calls `sample()`, and writes to the socket.
 
@@ -204,14 +215,14 @@ What `autoboot.lua` looks like after the change:
 ```lua
 local sock_w = emu.file("w")
 sock_w:open("socket.127.0.0.1:15000")
-gamestate.watch(sock_w, { frame_sampling_rate = 1 })
+state.watch(sock_w, { frame_sampling_rate = 1 })
 ```
 
 That's it. Three lines. Everything else — memory space, RAM addresses, serialization, frame counting, error handling — is inside the module.
 
 ### Internal Mechanics
 
-The public API is `gamestate.watch(socket, config)` where `config` is `{ frame_sampling_rate = N }` (default: 1, meaning every frame). Internally the module tracks four state variables:
+The public API is `state.watch(socket, config)` where `config` is `{ frame_sampling_rate = N }` (default: 1, meaning every frame). Internally the module tracks four state variables:
 
 | Variable | Purpose |
 |----------|---------|
@@ -242,9 +253,9 @@ The `pcall()` wrapper is required — if Python hasn't connected yet, writing to
 
 ## 4. How Is State Received and Used?
 
-### GameState: Immutable Value Object
+### DaggorathState: Immutable Value Object
 
-`GameState` is a lightweight Python class that holds one frame of game state. It has three requirements:
+`DaggorathState` is a lightweight Python class that holds one frame of game state. It has three requirements:
 
 1. **Fast attribute access** — fields are read thousands of times per second during RL training
 2. **Immutability** — the game state reported by MAME shouldn't be changeable from Python
@@ -258,15 +269,15 @@ Requirement 3 is satisfied because `__init__` sets each attribute explicitly by 
 
 ### Bridge Changes
 
-`bridge.py`'s `recv()` method currently parses JSON. With raw bytes, it constructs `GameState` directly:
+`bridge.py`'s `recv()` method currently parses JSON. With raw bytes, it constructs `DaggorathState` directly:
 
 ```python
-def recv(self) -> GameState:
+def recv(self) -> DaggorathState:
     while True:
         if b"\n" in self._recv_buf:
             line, self._recv_buf = self._recv_buf.split(b"\n", 1)
             if line.strip():
-                return GameState(line)
+                return DaggorathState(line)
             continue
         chunk = self._state_conn.recv(4096)
         ...
@@ -278,7 +289,7 @@ The `send()` method stays unchanged — commands are handled by the separate `co
 
 ```python
 def step(self, action_idx):
-    obs = self._bridge.recv()          # GameState, not dict
+    obs = self._bridge.recv()          # DaggorathState, not dict
     reward = self._compute_reward(obs)
     return obs.to_array(), reward, terminated, truncated, {}
 ```
@@ -289,157 +300,12 @@ def step(self, action_idx):
 
 Testing happens at two levels:
 
-**Integration test** — launches actual MAME with `emulation/test_gamestate.lua` (a minimal autoboot script that only calls `gamestate.watch()` — no action socket, no key handling). `tests/test_gamestate.py` receives raw bytes, constructs `GameState`, and asserts field values match known game-startup values. Also verifies immutability.
+**Integration test** — launches actual MAME with a minimal autoboot script that only calls `state.watch()` (no action socket, no key handling). A Python test receives raw bytes, constructs `DaggorathState`, and asserts field values match known game-startup values. Also verifies immutability.
 
 **Unit tests** (Python only — no MAME needed):
-- `GameStateSchema.unpack()` with known test bytes → correct typed tuple
-- `GameState(raw).to_array()` → correct numpy array shape and dtype
-- `GameState` immutability → `__setattr__` raises on mutation attempt
-
----
-
-## Implementation
-
-### GameStateSchema
-
-The schema is the flyweight — a single shared instance created at module import. It accepts a list of `(name, width, converter)` tuples, computes byte offsets automatically from the widths, and provides an `unpack()` method that slices the raw byte string and applies converters:
-
-```python
-from typing import Callable
-
-class GameStateSchema:
-    def __init__(self, fields: list[tuple[str, int, Callable[[bytes], int]]]):
-        self._names = tuple(f[0] for f in fields)
-        self._converters = tuple(f[2] for f in fields)
-        self._offsets = []
-        self._widths = []
-        offset = 0
-        for _, width, _ in fields:
-            self._offsets.append(offset)
-            self._widths.append(width)
-            offset += width
-        self._total_bytes = offset
-
-    def unpack(self, raw: bytes) -> dict[str, int]:
-        return {
-            name: converter(raw[off:off + width])
-            for name, converter, off, width in zip(
-                self._names, self._converters, self._offsets, self._widths
-            )
-        }
-
-    @property
-    def field_names(self) -> tuple[str, ...]:
-        return self._names
-```
-
-`unpack()` returns a dict keyed by field name — the schema is the single source of truth. `GameState` sets attributes by name from this dict, so changing the schema automatically updates everything. No hardcoded indices anywhere outside the schema definition itself.
-
-### Schema Definitions
-
-Per the shared contract described in section 2, both sides maintain an identical ordered field list passed to `GameStateSchema`:
-
-**Lua** (`emulation/gamestate.lua`):
-
-```lua
-local RAM = {
-    gameMode         = 0x0277,
-    atFloor          = 0x0281,
-    atCellX          = 0x0214,
-    atCellY          = 0x0213,
-    atHeading        = 0x0223,
-    ambientLight     = 0x0226,
-    playerWeight     = 0x0215,
-    playerStrength   = 0x0217,
-    heartBeatInterval  = 0x02AF,
-    heartBeatCountdown = 0x02AE,
-    playerFainting   = 0x0228,
-    evilWizardDead   = 0x022B,
-}
-
-local SCHEMA = {
-    {"gameMode",           1},
-    {"atFloor",            1},
-    {"atCellX",            1},
-    {"atCellY",            1},
-    {"atHeading",          1},
-    {"ambientLight",       2},
-    {"playerWeight",       2},
-    {"playerStrength",     2},
-    {"heartBeatInterval",  1},
-    {"heartBeatCountdown", 1},
-    {"playerFainting",     1},
-    {"evilWizardDead",     1},
-}
-```
-
-**Python** (`daggorath_gym/game_state.py`):
-
-```python
-SCHEMA = GameStateSchema([
-    ("game_mode",              1, lambda b: b[0]),
-    ("at_floor",               1, lambda b: b[0]),
-    ("at_cell_x",              1, lambda b: b[0]),
-    ("at_cell_y",              1, lambda b: b[0]),
-    ("at_heading",             1, lambda b: b[0]),
-    ("ambient_light",          2, lambda b: b[0] << 8 | b[1]),
-    ("player_weight",          2, lambda b: b[0] << 8 | b[1]),
-    ("player_strength",        2, lambda b: b[0] << 8 | b[1]),
-    ("heart_beat_interval",    1, lambda b: b[0]),
-    ("heart_beat_countdown",   1, lambda b: b[0]),
-    ("player_fainting",        1, lambda b: b[0]),
-    ("evil_wizard_dead",       1, lambda b: b[0]),
-])
-```
-
-u16 converters use `b[0] << 8 | b[1]` (big-endian, high byte first).
-
-### GameState Class
-
-As discussed in section 4, `GameState` uses `__slots__` for zero dict overhead, direct attribute assignment for fast access, and a blocked `__setattr__` for immutability:
-
-```python
-import numpy as np
-
-class GameState:
-    __slots__ = (
-        'game_mode', 'at_floor', 'at_cell_x', 'at_cell_y', 'at_heading',
-        'ambient_light', 'player_weight', 'player_strength',
-        'heart_beat_interval', 'heart_beat_countdown',
-        'player_fainting', 'evil_wizard_dead',
-    )
-
-    def __init__(self, raw: bytes):
-        vals = SCHEMA.unpack(raw)            # dict[str, int]
-        for name in SCHEMA.field_names:
-            object.__setattr__(self, name, vals[name])
-
-    def __setattr__(self, name, value):
-        raise AttributeError("GameState is immutable")
-
-    def to_array(self) -> np.ndarray:
-        return np.array(
-            [getattr(self, name) for name in SCHEMA.field_names],
-            dtype=np.uint8,
-        )
-```
-
-`__init__` iterates the schema's field names, setting attributes from the dict returned by `unpack()`. No hardcoded indices — the schema is the single source of truth. Adding or reordering a field only requires changing the schema definition.
-
-`to_array()` uses the same field-name iteration, so it automatically stays in sync. Note that u16 values span multiple array elements (the schema's widths aren't tracked here — each field produces one slot regardless of byte width).
-
-> **Alternative considered:** We may not need named attribute access on the Python side at all. The Gym environment might just pass raw state directly to the RL agent as a numpy array, with no selective field access in reward calculation or observation processing. In that case, a single function `unpack(raw: bytes) -> np.ndarray` — with no `GameStateSchema` class, no `GameState` class, no immutability, and no `__slots__` — would be more direct and efficient. The current class-based approach is retained for now because it makes the state representation self-documenting for developers, but this may be revisited once the Gym environment's actual usage patterns are clear.
-
-### Implementation Order
-
-1. Create `daggorath_gym/game_state.py` with `GameStateSchema` and `GameState`
-2. Create `emulation/gamestate.lua` with `RAM`, `SCHEMA`, `watch()`, `_sample()`, `_on_frame()`
-3. Wire `gamestate.watch()` into `autoboot.lua` (replace inline observer logic)
-4. Update `bridge.py` `recv()` to return `GameState` instead of dict
-5. Update `env.py` to use typed attributes and `to_array()`
-6. Create `emulation/test_gamestate.lua` and `tests/test_gamestate.py`
-7. Run sandbox to verify end-to-end
-8. Delete `emulation/observer.lua`
+- Schema `unpack()` with known test bytes → correct typed dict
+- `DaggorathState(raw).to_array()` → correct numpy array shape and dtype
+- `DaggorathState` immutability → `__setattr__` raises on mutation attempt
 
 ---
 

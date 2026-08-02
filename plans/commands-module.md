@@ -168,9 +168,29 @@ The typing-timing and command-buffering sandboxes confirmed:
 - No Lua-side buffering is needed — `natkeyboard` operates below the game's ring buffer
 - `-autoboot_delay 1` and two blank `\r` priming posts are required before the first real command (handled in `autoboot.lua`)
 
-### Module Name
+### Module Names
 
-The module is named `commands` (file: `commands.lua`) with the single public function `commands.start(socket)`.
+| Side | File | Module | Notes |
+|------|------|--------|-------|
+| Lua | `commands.lua` | `commands` (module table) | Directly describes what the module dispatches |
+| Python | `commands.py` | — (exposes `COMMAND_SCHEMA` as ordered list) | Same stem, no prefix needed |
+
+Both sides share the same module name (`commands`). The Lua module exposes a single public function (`commands.start(socket)`) following the same pattern as `state.watch()`. The Python module exposes the ordered command phrase list as the shared contract.
+
+### Phrase Construction
+
+The ordered list of 154 command phrases is built from a parts dictionary and combination rules rather than maintained as a static flat list. The parts encode the command grammar's vocabulary:
+
+- **Object types, proper names, and hands** — the building blocks described in the [Parts](#parts) table above
+- **Combination rules** — which parts each command requires, described in the [Combination Rules](#combination-rules) table
+
+The phrase builder reads the rules, references the parts dictionary, and generates all valid `\r`-terminated command phrases in order. Object specifiers are derived by combining proper names with their types. INCANT words are derived from ring proper names (all except EMPTY). The result is the same 154-phrase flyweight list, but the source of truth is the grammar, not the flat output.
+
+This approach has two advantages over a static flat list:
+
+1. **The grammar is visible in the code.** You can see structure (6 object types, 9 ring proper names, 5 commands taking a hand) that a flat list buries in 154 opaque strings.
+
+2. **Changes are localized.** Adding a proper name means adding one entry to the parts dictionary. Specifiers, GET/PULL phrases, and INCANT words update automatically through the rules. In a flat list, you'd recompute offsets across multiple sections.
 
 ---
 
