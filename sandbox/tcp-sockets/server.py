@@ -56,6 +56,7 @@ def run() -> None:
         "-rompath", rompath,
         "-hashpath", hashpath,
         "-autoboot_script", autoboot_script,
+        "-cfg_directory", os.path.join(root, ".venv", "mame-cfg"),
         "-skip_gameinfo",
         "-nonvram_save",
         "-window",

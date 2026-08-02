@@ -31,6 +31,7 @@ def run() -> int:
         "-rompath", os.path.join(ROOT, "emulation", "roms"),
         "-hashpath", os.path.join(ROOT, "emulation", "hash"),
         "-autoboot_script", os.path.join(SANDBOX_DIR, "autoboot.lua"),
+        "-cfg_directory", os.path.join(ROOT, ".venv", "mame-cfg"),
         "-skip_gameinfo", "-nonvram_save",
         "-window", "-sound", "none",
     ], env=env)

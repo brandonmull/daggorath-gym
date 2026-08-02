@@ -17,7 +17,7 @@ import subprocess
 import sys
 from typing import Any, Dict, Optional
 
-from .paths import ROOT_PATH, EMU_PATH
+from .paths import ROOT_PATH, EMU_PATH, MAME_CFG_DIR
 
 # ---- defaults (mirrors emu/paths.lua) ---------------------------------------
 DEFAULT_HOST = "127.0.0.1"
@@ -230,6 +230,7 @@ def _build_mame_cmd(
         "-rompath", rompath,
         "-hashpath", hashpath,
         "-autoboot_script", script,
+        "-cfg_directory", MAME_CFG_DIR,
         "-skip_gameinfo",
         "-nonvram_save",
         "-sound", sound,

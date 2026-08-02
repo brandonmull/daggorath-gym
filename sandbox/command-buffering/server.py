@@ -14,6 +14,7 @@ PORT = 15000
 SANDBOX_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(SANDBOX_DIR))
 EMU_DIR = os.path.join(ROOT, "emulation")
+CFG_DIR = os.path.join(ROOT, ".venv", "mame-cfg")
 
 
 def main():
@@ -33,6 +34,7 @@ def main():
         "-hashpath", os.path.join(ROOT, "emulation", "hash"),
         "-autoboot_script", os.path.join(SANDBOX_DIR, "autoboot.lua"),
         "-autoboot_delay", "1",
+        "-cfg_directory", CFG_DIR,
         "-skip_gameinfo", "-nonvram_save",
         "-window", "-sound", "none",
     ], env=env)
