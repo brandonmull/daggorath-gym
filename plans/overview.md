@@ -60,4 +60,4 @@ MAME lets us attach **Lua scripts** that run alongside the emulated machine. The
 | `sandbox/README.md` | Sandbox validation: TCP sockets, natkeyboard delivery, command buffering |
 | `README.md` | Project overview, milestones, setup instructions |
 | `plans/state-module.md` | Game state reporting module plan |
-| `plans/commands-module.md` | Action/command dispatch module plan |
+| `plans/commands-module.md` | Command dispatch module plan |

@@ -285,14 +285,9 @@ def recv(self) -> DaggorathState:
 
 The `send()` method stays unchanged — commands are handled by the separate `commands.py` module.
 
-`env.py` replaces dict access with typed attributes and uses the built-in `to_array()`:
+`to_array()` uses `uint16` — three fields are u16 values that can exceed 255. Clamping to `uint8` loses information. The environment layer can normalize or scale downstream if needed.
 
-```python
-def step(self, action_idx):
-    obs = self._bridge.recv()          # DaggorathState, not dict
-    reward = self._compute_reward(obs)
-    return obs.to_array(), reward, terminated, truncated, {}
-```
+The reward function is out of scope for the state and commands modules. It's a derived calculation, not an intrinsic game value. The environment should provide a minimal placeholder until reward shaping is designed separately.
 
 ---
 
@@ -300,7 +295,7 @@ def step(self, action_idx):
 
 Testing happens at two levels:
 
-**Integration test** — launches actual MAME with a minimal autoboot script that only calls `state.watch()` (no action socket, no key handling). A Python test receives raw bytes, constructs `DaggorathState`, and asserts field values match known game-startup values. Also verifies immutability.
+**Integration test** — launches actual MAME with a minimal autoboot script that only calls `state.watch()` (no command socket, no key handling). A Python test receives raw bytes, constructs `DaggorathState`, and asserts field values match known game-startup values. Also verifies immutability.
 
 **Unit tests** (Python only — no MAME needed):
 - Schema `unpack()` with known test bytes → correct typed dict

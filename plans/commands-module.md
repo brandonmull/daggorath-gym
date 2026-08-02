@@ -6,10 +6,17 @@ _See [plans/overview.md](overview.md) for project context and architecture._
 
 This document addresses four design questions:
 
-1. **What actions can we take?** — the command grammar, action space enumeration
-2. **How are actions represented?** — the wire format shared between Python and Lua
-3. **How are actions dispatched?** — the Lua-side module that delivers command phrases to the game
-4. **How are actions chosen and sent?** — the Python side
+1. **What commands can we issue?** — the command grammar, command space enumeration
+2. **How are commands represented?** — the wire format shared between Python and Lua
+3. **How are commands dispatched?** — the Lua-side module that delivers command phrases to the game
+4. **How are commands chosen and sent?** — the Python side
+
+**Terminology:** This plan uses several related terms:
+
+- **Command word** — a single instruction the parser recognizes (MOVE, ATTACK, INCANT, etc.). There are 14.
+- **Command phrase** — the full typed string sent to the game, built from a command word plus parts ("ATTACK LEFT", "GET LEFT TORCH"). There are 154.
+- **Command index** — the 0–153 byte that identifies a phrase on the wire.
+- **Action space** — a concept from Gymnasium (the RL framework we use). It describes what choices the agent can make at each step. Ours is a set of 154 discrete choices (indices 0–153), one per command phrase. "Action" in this plan means a Gymnasium action — the integer the agent emits to select a command. "Action space" means the set of all 154 possible actions.
 
 ---
 
@@ -66,7 +73,7 @@ sends 1 byte ──────────────→  1 byte ──→  fr
 
 ---
 
-## 1. What Actions Can We Take?
+## 1. What Commands Can We Issue?
 
 ### The Game's Command Grammar
 
@@ -132,13 +139,13 @@ For RL training with stable-baselines3, a flat list of all valid command phrases
 
 ### Open: Action Space Scope
 
-Start with the full 154 or a curated subset? Early training may benefit from fewer actions. Which commands are essential for initial training?
+Start with the full 154 or a curated subset? Early training may benefit from fewer commands. Which commands are essential for initial training?
 
 ---
 
-## 2. How Are Actions Represented?
+## 2. How Are Commands Represented?
 
-### 1-Byte Action Index
+### 1-Byte Command Index
 
 Python sends a single byte (0–153) representing the command index. Lua looks up the index in its ordered phrase list and dispatches the corresponding command. No JSON, no key names on the wire. The index is the shared contract — both sides maintain an identical ordered list.
 
@@ -152,7 +159,7 @@ The bot sends full-word command phrases (e.g., "ATTACK LEFT") rather than abbrev
 
 ---
 
-## 3. How Are Actions Dispatched?
+## 3. How Are Commands Dispatched?
 
 ### The Lua Module's Job
 
@@ -168,6 +175,10 @@ The typing-timing and command-buffering sandboxes confirmed:
 - No Lua-side buffering is needed — `natkeyboard` operates below the game's ring buffer
 - `-autoboot_delay 1` and two blank `\r` priming posts are required before the first real command (handled in `autoboot.lua`)
 
+A command is dispatched on the same frame it arrives — no frame-skipping, throttling, or batching. The sandboxes confirmed that commands can be posted at full frame rate without loss. The natural keyboard interface is acquired once on first use and reused across all subsequent frames.
+
+On the Python side, `bridge.send()` accepts a typed command value object rather than a raw integer. The object validates the index at construction time, so an invalid index fails at the Python call site rather than being sent to the emulator as a corrupted byte.
+
 ### Module Names
 
 | Side | File | Module | Notes |
@@ -181,7 +192,7 @@ Both sides share the same module name (`commands`). The Lua module exposes a sin
 
 The ordered list of 154 command phrases is built from a parts dictionary and combination rules rather than maintained as a static flat list. The parts encode the command grammar's vocabulary:
 
-- **Object types, proper names, and hands** — the building blocks described in the [Parts](#parts) table above
+- **Objects types, proper names, and hands** — the building blocks described in the [Parts](#parts) table above. Proper names are stored in a dictionary keyed by object type (not a flat array) — each type has its own set of valid names, and derivations flow from the type groupings.
 - **Combination rules** — which parts each command requires, described in the [Combination Rules](#combination-rules) table
 
 The phrase builder reads the rules, references the parts dictionary, and generates all valid `\r`-terminated command phrases in order. Object specifiers are derived by combining proper names with their types. INCANT words are derived from ring proper names (all except EMPTY). The result is the same 154-phrase flyweight list, but the source of truth is the grammar, not the flat output.
@@ -194,7 +205,7 @@ This approach has two advantages over a static flat list:
 
 ---
 
-## 4. How Are Actions Chosen and Sent?
+## 4. How Are Commands Chosen and Sent?
 
 ### Python Side
 
