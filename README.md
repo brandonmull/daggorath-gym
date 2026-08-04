@@ -90,6 +90,8 @@ CoCo 3 system ROM (coco3.zip)
 
 **`socket`, never `sock`.** TCP socket variable names use the full word.
 
+**Multi-word variable names follow adjective-then-noun order.** `state_socket`, not `socket_state`. `command_socket`, not `socket_command`.
+
 **Naming conventions span both sides of the wire.** Lua and Python constants that represent the same concept must use the same name, differing only in Python's `_` prefix (Lua uses `local` for privacy).
 
 **`emulation/observer.lua` is legacy.** `state.lua` is its replacement. `observer.lua` must not exist.
