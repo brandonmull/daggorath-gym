@@ -37,7 +37,7 @@ Usage tips:
 
 ```
 Python Gym Env (daggorath_gym/env.py)
-    ↕ TCP sockets (127.0.0.1:15000 state, 15001 actions)
+    ↕ TCP sockets (127.0.0.1:15000 state, 15001 commands)
 MAME emulator (coco3 driver)
     ↕
 Lua scripts (emulation/*.lua) running inside MAME's embedded Lua engine
@@ -52,9 +52,9 @@ CoCo 3 system ROM (coco3.zip)
 - **Python** starts TCP servers on ports 15000 + 15001, then launches MAME
 - **MAME** boots with `-autoboot_script emulation/autoboot.lua`
 - **autoboot.lua** opens two unidirectional emu.file sockets, registers frame notifier
-- **observer.lua** reads RAM state every 60 frames → JSON over port 15000
-- **Frame notifier** reads actions from port 15001 → dispatches to commands.lua
-- **Python** receives game state, sends actions back
+- **state.lua** reads RAM state every frame → raw bytes over port 15000
+- **Frame notifier** reads command indices from port 15001 → dispatches to commands.lua
+- **Python** receives game state, sends command indices back
 
 ### Layout
 
@@ -63,16 +63,36 @@ CoCo 3 system ROM (coco3.zip)
 | `daggorath_gym/env.py` | DaggorathEnv (Gymnasium) |
 | `daggorath_gym/bridge.py` | MameBridge — TCP servers + MAME lifecycle |
 | `daggorath_gym/config.py` | MAME CLI flags |
+| `daggorath_gym/state.py` | Game state deserialization |
+| `daggorath_gym/commands.py` | Command phrase enumeration |
 | `daggorath_gym/paths.py` | Project path resolution |
 | `emulation/autoboot.lua` | Entry point — emu.file sockets, frame notifier |
-| `emulation/observer.lua` | RAM reader → JSON over TCP |
-| `emulation/commands.lua` | Keystroke simulation |
+| `emulation/state.lua` | RAM reader → raw bytes over TCP |
+| `emulation/commands.lua` | Command phrase dispatch via natkeyboard |
 | `emulation/paths.lua` | Socket config (host, ports) |
 | `emulation/roms/` | coco3.zip, daggorath.zip |
 | `emulation/docs/` | 6809 disassembly, RAM map, hardware ref |
 | `sandbox/` | Validated TCP sandbox (see its README) |
 | `setup.sh` | One-shot MAME + ROM + Lua installer |
 | `pyproject.toml` | Pip package config |
+
+## Coding Conventions
+
+**The game manual is the authority.** Module-level constant names come from the game manual or ROM disassembly when available. When neither supplies a term, use the plan docs.
+
+**Constants use a two-word body with a domain prefix.** The first word scopes to a domain (objects, commands); the second word matches the source material. This keeps related constants visually grouped and prevents ambiguous bare-name collisions.
+
+**Don't extract a subset into a separate constant when the superset already exists.** A value derivable from an existing constant lives in the function that uses it. Duplicating data in two constants means two places to keep in sync.
+
+**Prefer tuples for simple data, but use a named type when position alone isn't clear.** A tuple works when each element's role is obvious from context. When the reader would need to remember which position means what, a dataclass or named tuple reduces cognitive load.
+
+**`action` is Gymnasium's word, `command` is ours.** `action` is the integer an agent chooses at each step — it appears only in `action_space` and `step(action)`. Our code never uses `action` as a name for our own components. The channel on port 15001 is the **command** channel; what travels across it are **command indices**. Variables and constants use `command`, never `action`.
+
+**`socket`, never `sock`.** TCP socket variable names use the full word.
+
+**Naming conventions span both sides of the wire.** Lua and Python constants that represent the same concept must use the same name, differing only in Python's `_` prefix (Lua uses `local` for privacy).
+
+**`emulation/observer.lua` is legacy.** `state.lua` is its replacement. `observer.lua` must not exist.
 
 ## Reference Documentation
 

@@ -184,9 +184,11 @@ On the Python side, `bridge.send()` accepts a typed command value object rather 
 | Side | File | Module | Notes |
 |------|------|--------|-------|
 | Lua | `commands.lua` | `commands` (module table) | Directly describes what the module dispatches |
-| Python | `commands.py` | — (exposes `COMMAND_SCHEMA` as ordered list) | Same stem, no prefix needed |
+| Python | `commands.py` | — (exposes `_COMMAND_PHRASES` as ordered list) | Same stem, no prefix needed |
 
 Both sides share the same module name (`commands`). The Lua module exposes a single public function (`commands.start(socket)`) following the same pattern as `state.watch()`. The Python module exposes the ordered command phrase list as the shared contract.
+
+`command` is the consistent term for the channel on port 15001. `action` is a Gymnasium term — it belongs to the framework (`action_space`, `step(action)`), not to our component names.
 
 ### Phrase Construction
 
@@ -217,6 +219,80 @@ The bridge's `send()` writes a single byte to the command socket. The environmen
 
 - **Action space scope** — Full 154 or curated subset for initial training?
 - ~~**Error handling** — Invalid index: drop and log. Python's `DaggorathCommand` prevents out-of-range indices at construction; a bad byte on the wire is either a bug or corruption. Lua prints a warning and ignores it for that frame — no crash, no response.~~
+
+---
+
+## Testing Strategy
+
+**Unit tests** — lives in `tests/test_commands.py` (standalone file, no MAME needed, no unified test file). Tests:
+- Phrase count is 154
+- First phrases (MOVE, MOVE BACK, MOVE LEFT, MOVE RIGHT, TURN LEFT...)
+- Last phrase (INCANT VULCAN at index 153)
+- All 154 phrases are unique
+- GET phrases use the LEFT/RIGHT × specifier pattern (62 phrases)
+- PULL phrases use the same pattern (62 phrases)
+- INCANT phrases (9 phrases, all ring proper names except EMPTY)
+- `DaggorathCommand` validates in-range indices (0 and 153)
+- `DaggorathCommand` rejects out-of-range indices (−1 and 154) with `ValueError`
+
+---
+
+## Implementation Details
+
+### `commands.lua`
+
+`commands.start(socket)` is the entry point.
+
+```
+commands.start(socket)
+    → on the first frame, primes the CoCo input buffer with two blank carriage returns
+    → registers a per-frame notifier
+
+per-frame notifier:
+    → non-blocking read of one byte from the socket
+    → if a byte is available, looks up the phrase (Lua is 1-indexed)
+    → lazy-acquires the natkeyboard interface on first dispatch
+    → posts the phrase + carriage return to the CoCo's input buffer
+    → invalid indices print a warning and are ignored
+```
+
+The command grammar's building blocks live in a table called `COMMAND_PARTS` — directions, object classes, and proper names keyed by class (values listed in §1). At module load, a private function builds the 31 object specifiers by combining each class name with its proper names, then another builds the full ordered list of 154 command phrases from those specifiers and the combination rules. The resulting list is stored in `COMMAND_PHRASES`; its order is the shared contract with `_COMMAND_PHRASES` in `commands.py`.
+
+```
+_build_object_specifiers()
+    → iterates COMMAND_PARTS.classes
+    → for each class, adds the class name alone
+    → then adds each proper name + class combination
+    → returns 31 specifiers
+
+_build_phrases()
+    → adds MOVE phrases: bare, BACK, LEFT, RIGHT
+    → adds TURN phrases: LEFT, RIGHT, AROUND
+    → adds CLIMB phrases: UP, DOWN
+    → adds EXAMINE and LOOK (no parameters)
+    → for each of ATTACK, USE, DROP, STOW, REVEAL: adds LEFT and RIGHT
+    → for GET and PULL: adds every combination of LEFT/RIGHT × object specifier (2 × 31 = 62 each)
+    → for INCANT: adds every ring proper name except EMPTY (9)
+    → returns the full 154-phrase ordered list
+```
+
+### `commands.py`
+
+The module defines the same grammar constants as the Lua side, in dependency order: object classes, proper names keyed by class, a direction table mapping each command word to its valid direction values, generated object specifiers, and the generated phrase list whose order is the shared contract. A reverse-lookup dict maps phrases back to indices for debugging. Two private functions mirror the Lua builder functions; INCANT phrases are derived from the ring proper names minus `"EMPTY"` — no separate incantation words constant.
+
+```
+_build_object_specifiers()
+    → iterates object classes
+    → for each class, adds the class name alone
+    → then adds each proper name + class combination
+    → returns 31 specifiers
+
+_build_phrases()
+    → follows the same phrase construction rules as Lua's _build_phrases()
+    → returns the full 154-phrase ordered list
+```
+
+**`DaggorathCommand`** is a frozen dataclass wrapping a validated command index. Construction validates that the index is in range 0–153 and raises `ValueError` otherwise. A `phrase` property returns the human-readable command string.
 
 ## Reference Documents
 

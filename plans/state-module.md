@@ -133,6 +133,8 @@ Three competing principles were considered before settling on **hierarchical**:
 | Lua | `state.lua` | `state` (module table) | Short, unambiguous within the emulation directory — it's the only state-related file there |
 | Python | `state.py` | `DaggorathState`, `DaggorathStateSchema` | `Daggorath` prefix avoids naming collisions with MAME's internal state objects or a generic Python `GameState` |
 
+`emulation/observer.lua` is legacy. `state.lua` replaces it. `observer.lua` must not exist.
+
 The Lua module uses `state` rather than a longer name like `gamestate` because the emulation directory provides sufficient context — there's nothing else called "state" in that scope. The Python module uses `DaggorathState` rather than `GameState` because `GameState` is a generic term that could collide with other game state classes in the Python ecosystem. The `Daggorath` prefix makes the class name unique and self-documenting.
 
 The module's public API is a single function: `state.watch(socket, config)`. This mirrors `commands.start(socket)` — both modules follow the same pattern: autoboot opens the socket and hands it off with a one-line call, and the module owns its own frame loop.
@@ -208,17 +210,9 @@ Two approaches were considered for integrating the reporting logic with `autoboo
 
 - **Option B:** Autoboot drives. The module exposes a pure `sample(memspace)` function. Autoboot registers the frame callback, calls `sample()`, and writes to the socket.
 
-We chose **A** because `autoboot.lua` stays minimal (3 lines instead of ~60), the module encapsulates concerns autoboot doesn't need to know about, and testing must be end-to-end regardless — there's no `manager.machine` or `memspace:read_u8()` outside a running MAME instance. This also parallels the commands module design (same pattern, opposite direction).
+We chose **A** because `autoboot.lua` stays minimal — just a socket open and a single module call — while the module encapsulates concerns autoboot doesn't need to know about. Testing must be end-to-end regardless; there's no `manager.machine` or `memspace:read_u8()` outside a running MAME instance. This also parallels the commands module design (same pattern, opposite direction).
 
-What `autoboot.lua` looks like after the change:
-
-```lua
-local sock_w = emu.file("w")
-sock_w:open("socket.127.0.0.1:15000")
-state.watch(sock_w, { frame_sampling_rate = 1 })
-```
-
-That's it. Three lines. Everything else — memory space, RAM addresses, serialization, frame counting, error handling — is inside the module.
+After the change, `autoboot.lua` opens a write socket and hands it off with a single call — `state.watch(socket, { frame_sampling_rate = 1 })`. Everything else — memory space, RAM addresses, serialization, frame counting, error handling — is inside the module.
 
 ### Internal Mechanics
 
@@ -236,15 +230,15 @@ Two internal functions do the work:
 ```
 _sample()
     → iterates SCHEMA
-    → looks up each name in RAM for address
-    → calls memspace:read_u8() or read_u16() based on width
-    → returns string.char(...) concatenated bytes
+    → reads each address from _memspace as u8 or u16 (little-endian)
+    → concatenates all values into a raw byte string using string.char()
 
 _on_frame()
     → increments _frames_elapsed
-    → if _frames_elapsed % _frame_sampling_rate == 0:
-        bytes = _sample()
-        pcall(function() _socket:write(bytes) end)
+    → lazy-initializes _memspace on first sampled frame
+    → skips if _frames_elapsed is not a multiple of _frame_sampling_rate
+    → reads all 12 RAM addresses and builds a 15-byte raw frame
+    → writes the bytes plus a trailing newline to _socket (via pcall)
 ```
 
 The `pcall()` wrapper is required — if Python hasn't connected yet, writing to the socket would crash MAME. `pcall` catches the error silently.
@@ -269,21 +263,7 @@ Requirement 3 is satisfied because `__init__` sets each attribute explicitly by 
 
 ### Bridge Changes
 
-`bridge.py`'s `recv()` method currently parses JSON. With raw bytes, it constructs `DaggorathState` directly:
-
-```python
-def recv(self) -> DaggorathState:
-    while True:
-        if b"\n" in self._recv_buf:
-            line, self._recv_buf = self._recv_buf.split(b"\n", 1)
-            if line.strip():
-                return DaggorathState(line)
-            continue
-        chunk = self._state_conn.recv(4096)
-        ...
-```
-
-The `send()` method stays unchanged — commands are handled by the separate `commands.py` module.
+`bridge.py`'s `recv()` method currently parses JSON. With raw bytes, it buffers incoming data, splits on newline delimiters, and constructs a `DaggorathState` directly from the raw byte frame for each complete line received. The `send()` method writes a single byte (the command index) to the command socket.
 
 `to_array()` uses `uint16` — three fields are u16 values that can exceed 255. Clamping to `uint8` loses information. The environment layer can normalize or scale downstream if needed.
 
@@ -295,14 +275,64 @@ The reward function is out of scope for the state and commands modules. It's a d
 
 Testing happens at two levels:
 
-**Integration test** — launches actual MAME with a minimal autoboot script that only calls `state.watch()` (no command socket, no key handling). A Python test receives raw bytes, constructs `DaggorathState`, and asserts field values match known game-startup values. Also verifies immutability.
+**Integration test** — launches actual MAME. Lives in `tests/test_bridge.py`. Receives raw bytes, constructs `DaggorathState`, asserts field values match known game-startup values.
 
-**Unit tests** (Python only — no MAME needed):
-- Schema `unpack()` with known test bytes → correct typed dict
-- `DaggorathState(raw).to_array()` → correct numpy array shape and dtype
-- `DaggorathState` immutability → `__setattr__` raises on mutation attempt
+**Unit tests** — lives in `tests/test_state.py` (standalone file, no MAME needed, no unified test file). Tests:
+- Schema has 12 fields, `FRAME_LEN` = 15
+- `unpack()` with known test bytes → correct typed dict
+- `DaggorathState(raw)` construction → attribute access via `__slots__`
+- `DaggorathState` immutability (`__setattr__` raises `AttributeError`)
+- `to_array()` → correct numpy shape (12,) and uint16 dtype
+- Newline handling (trailing `\n` from Lua is stripped before unpack)
 
 ---
+
+## Implementation Details
+
+### `state.lua`
+
+`state.watch(socket, config)` is the entry point.
+
+The schema is a constant named `SCHEMA` — an ordered array of `{ name, addr, width }` tables (12 entries, listed in §1). The byte order is the shared contract with `DaggorathStateSchema.FIELDS` in Python.
+
+```
+state.watch(socket, config)
+    → stores the write socket
+    → resets the frame counter
+    → sets the sampling rate from config (default: every frame)
+    → registers a per-frame notifier
+
+per-frame notifier:
+    → increments the frame counter
+    → lazy-acquires the CPU memory space on first sampled frame
+    → skips if the frame isn't a multiple of the sampling rate
+    → reads all 12 RAM addresses as u8 or two-byte u16 little-endian
+    → concatenates values into a 15-byte raw frame with string.char()
+    → writes the bytes plus a trailing newline to the socket (via pcall)
+```
+
+### `state.py`
+
+Two classes: `DaggorathStateSchema` (flyweight) and `DaggorathState` (immutable value object).
+
+The field definitions are a class attribute named `FIELDS` — a tuple of `(name, offset, width)` 3-tuples in the same order as Lua's `SCHEMA`. No dataclass wrapper. `FRAME_LEN` is 15 (9 u8 + 3 u16 fields).
+
+```
+DaggorathStateSchema.unpack(data)
+    → validates data length against FRAME_LEN
+    → iterates FIELDS
+    → reads u8 via direct byte index, u16 via struct.unpack_from("<H")
+    → returns dict of {field_name: value}
+
+DaggorathState(data)
+    → strips trailing newline from raw bytes
+    → delegates to DaggorathStateSchema.unpack()
+    → sets each field as an attribute via object.__setattr__
+    → after construction, __setattr__ raises AttributeError (immutable)
+
+to_array()
+    → returns a uint16 numpy array of length 12
+```
 
 ## Reference Documents
 

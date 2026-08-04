@@ -32,6 +32,7 @@ MAME lets us attach **Lua scripts** that run alongside the emulated machine. The
 │  │  │   Lua scripts           │  │                             │
 │  │  │   - autoboot.lua        │  │                             │
 │  │  │   - state.lua           │  │                             │
+│  │  │   - commands.lua        │  │                             │
 │  │  └────────────────────────┘  │                             │
 │  │  ┌────────────────────────┐  │                             │
 │  │  │   Emulated CoCo 3       │  │                             │
