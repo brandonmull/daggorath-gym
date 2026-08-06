@@ -176,19 +176,20 @@ Both sides share the same module name (`commands`). The Lua module exposes a sin
 
 ### Phrase Construction
 
-The ordered list of 154 command phrases is built from a grammar table rather than maintained as a static flat list. The `COMMAND_PARTS` table encodes the grammar described in §1:
+The ordered list of 154 command phrases is built from four grammar constants rather than maintained as a static flat list. All constants keep their items in alphabetical order:
 
-- **`directions`** — maps each command word to its valid `<command_direction>` set
-- **`object_classes`** — the six object classes
-- **`proper_names`** — proper names keyed by class
+- **`COMMAND_WORDS`** — the eight command words that take a `<command_direction>` (ATTACK, CLIMB, DROP, MOVE, REVEAL, STOW, TURN, USE), in alphabetical order
+- **`COMMAND_DIRECTIONS`** — maps each command word to its valid `<command_direction>` set, keys in alphabetical order
+- **`OBJECT_CLASSES`** — the six object classes (FLASK, RING, SCROLL, SHIELD, SWORD, TORCH), in alphabetical order
+- **`OBJECT_PROPER_NAMES`** — proper names keyed by class (keys in alphabetical order)
 
-The phrase builder walks the command table, expanding each row's direction set and object specifier form into phrases. Object specifiers are derived by combining proper names with their classes. INCANT phrases are derived from the ring proper names (all except EMPTY).
+The phrase builder walks `COMMAND_WORDS`, expanding each word's direction set and object specifier form into phrases. Object specifiers are derived by combining proper names with their classes. INCANT phrases are derived from the ring proper names (all except EMPTY). The resulting phrase list is stored in `COMMAND_PHRASES`; its order is the shared contract with `_COMMAND_PHRASES` in `commands.py`.
 
 This approach has two advantages over a static flat list:
 
 1. **The grammar is visible in the code.** The direction table and object vocabulary mirror the grammar productions directly.
 
-2. **Changes are localized.** Adding a proper name means adding one entry to `proper_names`. Specifiers, GET/PULL phrases, and INCANT words update automatically.
+2. **Changes are localized.** Adding a proper name means adding one entry to `OBJECT_PROPER_NAMES`. Specifiers, GET/PULL phrases, and INCANT words update automatically. Alphabetical ordering makes constants easy to scan and keeps diffs clean.
 
 ---
 
@@ -241,7 +242,7 @@ per-frame notifier:
     → invalid indices print a warning and are ignored
 ```
 
-The command grammar's building blocks live in a table called `COMMAND_PARTS` — `directions`, `object_classes`, and `proper_names` (values listed in §1). At module load, a private function builds the 31 object specifiers by combining each class name with its proper names, then another builds the full ordered list of 154 command phrases from those specifiers and the direction table. The resulting list is stored in `COMMAND_PHRASES`; its order is the shared contract with `_COMMAND_PHRASES` in `commands.py`.
+The command grammar's building blocks are four alphabetically-ordered constants: `COMMAND_WORDS`, `COMMAND_DIRECTIONS`, `OBJECT_CLASSES`, and `OBJECT_PROPER_NAMES` (values listed in §1). At module load, a private function builds the 31 object specifiers by combining each class name with its proper names, then another builds the full ordered list of 154 command phrases from those specifiers and the direction table. The resulting list is stored in `COMMAND_PHRASES`; its order is the shared contract with `_COMMAND_PHRASES` in `commands.py`.
 
 ```
 _build_object_specifiers()
@@ -250,7 +251,7 @@ _build_object_specifiers()
     → then adds each proper name followed by its class
     → yields 31 specifiers
 
-_build_phrases()
+_build_command_phrases()
     → builds the full phrase list in order
     → expands direction sets for each command word in the command table
     → expands object specifiers for GET and PULL (62 each)
