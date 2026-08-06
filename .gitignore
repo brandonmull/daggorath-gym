@@ -35,9 +35,6 @@ wheels/
 *.swp
 *.swo
 
-# AI context (local only)
-.clinerules
-
 # Environment variables
 .env
 .env.local 

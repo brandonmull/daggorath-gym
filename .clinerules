@@ -1,0 +1,119 @@
+# Project: Daggorath Gym
+
+Training an RL bot to play Dungeons of Daggorath (1982) in MAME + Gymnasium.
+
+**⚠️ READ README.md first** — it contains the full project overview, architecture, milestones, and directory structure. This file provides supplemental AI-specific constraints.
+
+## Platform
+- Windows 11 + WSL (Ubuntu)
+- MAME runs in WSL, WSLg provides display
+- No Docker — project runs bare-metal on WSL
+- For headless training: `-video none -sound none` (already in config.py)
+
+## Git
+- **Never commit to git** — do not run `git add`, `git commit`, or any git command that modifies the repository. The user handles all git operations.
+- **SSH key**: `C:\Users\brand\.ssh\personal_github` (copy to `~/.ssh/` for WSL git)
+- **Git remote**: `git@github.com:brandonmull/daggorath-gym.git` (SSH) or HTTPS after `gh auth login`
+
+## MAME & Lua
+- **MAME uses its own embedded Lua** — not the system Lua. LuaRocks packages cannot be loaded. The rockspec (`emu/daggorath.rockspec`) is dead. Don't suggest LuaRocks.
+
+## Coding Conventions
+- **README naming conventions are binding.** Lua uses camelCase; Python uses snake_case. Always use `socket` (not `sock`). Multi-word names follow adjective-then-noun order (`state_socket`, not `socket_state`). The README is the authority — check it before choosing any name.
+
+## AI Implementation Constraints
+- **Implement only what the plan specifies.** Do not add configurability, defaults, extra exports, or structural abstractions that the plan does not ask for. The plan is the specification — build to it, not past it.
+- **`__init__.py` exports only what the known consumer needs.** Today that's StableBaselines3, which requires only `DaggorathEnv`.
+
+## Reference Docs (in emulation/docs/)
+- `code.md` — full 6809 disassembly
+- `ram.md` — RAM memory map
+- `hardware.md` — CoCo hardware reference
+- `setup.md` — emulator architecture notes, lite MAME build plans
+
+## README Writing Principles
+
+When writing or revising README files:
+
+1. **Order sections by the reader's questions, in sequence.**
+   The reader's mental path is: What is this? → Can I install it? → What's broken? → Where is it going? → How does it work? → Where's the deep dive? Structure follows that inquiry order — not the structure of the codebase, not the history of the project.
+
+2. **The getting-started path comes immediately after the intro.**
+   If someone can't install and run in under a minute, they'll leave. Everything else — architecture, roadmap, reference docs — is secondary.
+
+3. **If a section has only 2-3 items, it's probably a sub-point.**
+   Tiny sections with few bullet points are visual clutter. Fold them into the nearest related section. Headings are expensive — don't spend them on trivia.
+
+4. **Be honest about limitations before presenting aspirations.**
+   Known Issues goes before Milestones. A roadmap that paints an optimistic picture while hiding bugs erodes trust. The contract is "here's what's broken" — everything else is hope.
+
+5. **Never present the same information twice.**
+   If a directory tree and a manifest table both answer "where are the files," keep the more scannable one. Duplication makes readers wonder if they missed a difference — there is no difference, it's just noise.
+
+6. **Every section must justify its existence.**
+   Remove a section when its content answers a question already answered elsewhere, or when it's too thin to stand alone. Sections serve content, not convention.
+
+7. **Write, challenge, rewrite.**
+   The first draft is scaffolding. The collaborative back-and-forth is the real writing process. The final result is leaner than anything produced alone in one pass.
+
+## Plan Doc Writing Principles
+
+When writing or revising files in `plans/`:
+
+1. **Be specific about scope.**
+   Every instruction should define what it applies to. Instead of "use `command` everywhere," say what domain the rule governs: "components related to how the player issues commands." The reader shouldn't have to guess where the boundary is.
+
+**Naming and Terminology**
+
+2. **Follow the coding conventions in README.md.**
+   The README documents the project's coding conventions, including naming. Plan docs must use the names prescribed there.
+
+**Document Structure**
+
+3. **Implementation details live in module docs, not in the overview.**
+   `overview.md` sets project-wide conventions and principles. Per-module specifics — constants, function signatures, class attributes — belong in that module's own plan doc.
+
+4. **No source code in plan docs.**
+   A plan is a design document, not an implementation. Describe what the code should do, name the important constants/classes/functions, but never paste Lua or Python source. Code blocks are for architecture diagrams, pseudo-code, and data flow — not executable code.
+
+**Code Structure**
+
+5. **Don't extract a subset into a separate constant when the superset already exists.**
+   If a set of values is derivable from an existing constant, the filter lives in the function that uses it — not in a duplicate constant that must be kept in sync.
+
+6. **Prefer tuples for simple data, but use a named type when position alone isn't clear.**
+    A tuple works when each element's role is obvious from context. When the reader would need to remember which position means what, a dataclass or named tuple reduces cognitive load.
+
+7. **Don't add structure the plan doesn't ask for.**
+    If the plan defines a module with three constants, implement those three. If you see an opportunity to extract a helper, rename for consistency, or add a constant that seems useful — ask first. Don't silently diverge from the plan. The plan names things: use those exact names. The other side's corresponding module (commands.lua ↔ commands.py) is the second source of truth — they must mirror each other identically.
+
+**How to Write**
+
+8. **Don't repeat data that already appears elsewhere in the same doc.**
+   If earlier sections define all the relevant values, later sections reference them rather than reprinting them.
+
+9. **Lead with prose, not with symbol lists.**
+    When presenting constants, functions, or class attributes, describe them in flowing text first. A list may follow for reference, but it never stands alone as a section's content.
+
+10. **Use arrow notation for behavior descriptions.**
+    Function names head each block. Arrows describe what happens using plain language —
+    no variable names, table keys, or code identifiers in the arrow text:
+
+    ```
+    function_name()
+        → walks each object class
+        → for each class, adds the bare class name as a specifier
+        → then adds each proper name followed by its class
+        → returns 31 specifiers
+    ```
+
+    This is easier to scan than prose paragraphs and avoids the symbol-index problem
+    (walls of `_BACKTICKED_IDENTIFIERS`). Every arrowed item is plain English;
+    code symbols live in the block title, not the body.
+
+## Directory Quick Reference
+- `daggorath_gym/` — Python Gymnasium env (env.py, bridge.py, state.py, commands.py, paths.py)
+- `emulation/` — Lua scripts (autoboot.lua, state.lua, commands.lua)
+- `emulation/hash/` — MAME hash files (coco_cart.xml with Shield Fix)
+- `emulation/roms/` — coco3.zip, daggorath.zip
+- `sandbox/` — TCP socket sandbox (validated communication, see sandbox/README.md)
