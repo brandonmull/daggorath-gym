@@ -13,7 +13,7 @@ This document addresses four design questions:
 
 **Terminology:** This plan uses several related terms:
 
-- **Command word** — a single instruction the parser recognizes (MOVE, ATTACK, INCANT, etc.). There are 14.
+- **Command word** — a single instruction the parser recognizes (MOVE, ATTACK, INCANT, etc.). There are 13.
 - **Command phrase** — the full typed string sent to the game, built from a command word plus parts ("ATTACK LEFT", "GET LEFT TORCH"). There are 154.
 - **Command index** — the 0–153 byte that identifies a phrase on the wire.
 - **Action space** — a concept from Gymnasium (the RL framework we use). It describes what choices the agent can make at each step. Ours is a set of 154 discrete choices (indices 0–153), one per command phrase. "Action" in this plan means a Gymnasium action — the integer the agent emits to select a command. "Action space" means the set of all 154 possible actions.
@@ -77,65 +77,49 @@ sends 1 byte ──────────────→  1 byte ──→  fr
 
 ### The Game's Command Grammar
 
-Dungeons of Daggorath is a text parser — every command is typed as words followed by ENTER. There are no directional or joystick inputs. The full grammar is documented in Appendix C of `emulation/docs/commands.md` and produces **154** valid command phrases across five categories:
+Dungeons of Daggorath is a text parser — every command is typed as words followed by ENTER. There are no directional or joystick inputs. The full grammar is documented in Appendix C of `emulation/docs/commands.md` and produces **154** valid command phrases.
 
-### Command Words (14 words)
+```
+command_phrase  = <command_word> ( <command_direction> ) ( <object_specifier> )
 
-| Category | Words |
-|----------|-------|
-| Combat | ATTACK, USE |
-| Inventory | DROP, EXAMINE, GET, LOOK, PULL, STOW |
-| Magic | INCANT, REVEAL |
-| Movement | CLIMB, MOVE, TURN |
+object_specifier = <proper_name>                      — (A)
+                 | ( <proper_name> ) <object_class>   — (B)
+```
 
-### Parts
+Every command phrase is a command word followed by up to two optional slots. `<command_direction>` is a single word. `<object_specifier>` is either a bare proper name (A) or an optional proper name followed by a class (B). The two forms are never interchangeable for the same command word.
 
-| Part | Values |
-|------|--------|
-| Hands | LEFT, RIGHT |
-| Object types | FLASK, RING, SCROLL, SHIELD, SWORD, TORCH |
-| Proper names | ABYE, BRONZE, DEAD, ELVISH, EMPTY, ENERGY, FINAL, FIRE, GOLD, HALE, ICE, IRON, JOULE, LEATHER, LUNAR, MITHRIL, PINE, RIME, SEER, SOLAR, SUPREME, THEWS, VISION, VULCAN, WOODEN |
+### Command Table
 
-### Object Specifiers
+The 13 command words (ATTACK, CLIMB, DROP, EXAMINE, GET, INCANT, LOOK, MOVE, PULL, REVEAL, STOW, TURN, USE) fill the two slots as shown below. LEFT and RIGHT indicate which hand a command uses or which direction to turn — the parser sees the same vocabulary; the command word provides the context.
 
-An **object specifier** is either a class name alone (e.g., `TORCH`) or a proper name followed by its class (e.g., `PINE TORCH`). Each proper name belongs to exactly one class. The full set of 31 object specifiers is:
+| command_word | command_direction | object_specifier |
+|---|---|---|
+| MOVE | (none), BACK, LEFT, RIGHT | — |
+| TURN | LEFT, RIGHT, AROUND | — |
+| CLIMB | UP, DOWN | — |
+| ATTACK, USE, DROP, STOW, REVEAL | LEFT, RIGHT | — |
+| EXAMINE, LOOK | — | — |
+| INCANT | — | (A), ring class only |
+| GET, PULL | LEFT, RIGHT | (B) |
 
-| Class | Specifiers |
-|-------|-----------|
-| FLASK | FLASK, ABYE FLASK, EMPTY FLASK, HALE FLASK, THEWS FLASK |
-| RING | RING, ENERGY RING, FINAL RING, FIRE RING, GOLD RING, ICE RING, JOULE RING, RIME RING, SUPREME RING, VULCAN RING |
-| SCROLL | SCROLL, SEER SCROLL, VISION SCROLL |
-| SHIELD | SHIELD, BRONZE SHIELD, LEATHER SHIELD, MITHRIL SHIELD |
-| SWORD | SWORD, ELVISH SWORD, IRON SWORD, WOODEN SWORD |
-| TORCH | TORCH, DEAD TORCH, LUNAR TORCH, PINE TORCH, SOLAR TORCH |
+INCANT accepts only ring proper names (ENERGY, FINAL, FIRE, GOLD, ICE, JOULE, RIME, SUPREME, VULCAN) — EMPTY is excluded. Form (B) generates 31 specifiers: each object class appears alone, and each class also combines with its proper names (e.g., FLASK, ABYE FLASK, HALE FLASK, THEWS FLASK).
 
-INCANT accepts only the proper name (without its class): `INCANT SUPREME`, not `INCANT SUPREME RING`.
+### Object Vocabulary
 
-### Combination Rules
-
-| Category | Command | Required parts |
-|----------|--------|---------------|
-| Combat | ATTACK | one hand |
-| Combat | USE | one hand |
-| Inventory | DROP | one hand |
-| Inventory | EXAMINE | (none) |
-| Inventory | GET | one hand + one object specifier |
-| Inventory | LOOK | (none) |
-| Inventory | PULL | one hand + one object specifier |
-| Inventory | STOW | one hand |
-| Magic | INCANT | one ring proper name |
-| Magic | REVEAL | one hand |
-| Movement | CLIMB | UP / DOWN |
-| Movement | MOVE | (none), or LEFT / RIGHT / BACK |
-| Movement | TURN | LEFT / RIGHT / AROUND |
-
-Total action space: 154 discrete command phrases.
+| Class | Proper names |
+|-------|-------------|
+| FLASK | ABYE, EMPTY, HALE, THEWS |
+| RING | ENERGY, FINAL, FIRE, GOLD, ICE, JOULE, RIME, SUPREME, VULCAN |
+| SCROLL | SEER, VISION |
+| SHIELD | BRONZE, LEATHER, MITHRIL |
+| SWORD | ELVISH, IRON, WOODEN |
+| TORCH | DEAD, LUNAR, PINE, SOLAR |
 
 ### Flat Enumeration (Chosen)
 
 For RL training with stable-baselines3, a flat list of all valid command phrases maps directly to `gymnasium.spaces.Discrete(154)`. The ordered list is the shared contract between Python and Lua — both sides maintain an identical ordered list where index 0 means "MOVE", index 1 means "MOVE BACK", and so on.
 
-> **Future consideration:** A grammar-based approach (command byte + parameter bytes for object/hand selection) would be more elegant and extensible, but the flat enumeration is simpler to start with.
+> **Future consideration:** A grammar-based approach (command byte + parameter bytes for object/direction selection) would be more elegant and extensible, but the flat enumeration is simpler to start with.
 
 ### Open: Action Space Scope
 
@@ -192,18 +176,19 @@ Both sides share the same module name (`commands`). The Lua module exposes a sin
 
 ### Phrase Construction
 
-The ordered list of 154 command phrases is built from a parts dictionary and combination rules rather than maintained as a static flat list. The parts encode the command grammar's vocabulary:
+The ordered list of 154 command phrases is built from a grammar table rather than maintained as a static flat list. The `COMMAND_PARTS` table encodes the grammar described in §1:
 
-- **Objects types, proper names, and hands** — the building blocks described in the [Parts](#parts) table above. Proper names are stored in a dictionary keyed by object type (not a flat array) — each type has its own set of valid names, and derivations flow from the type groupings.
-- **Combination rules** — which parts each command requires, described in the [Combination Rules](#combination-rules) table
+- **`directions`** — maps each command word to its valid `<command_direction>` set
+- **`object_classes`** — the six object classes
+- **`proper_names`** — proper names keyed by class
 
-The phrase builder reads the rules, references the parts dictionary, and generates all valid `\r`-terminated command phrases in order. Object specifiers are derived by combining proper names with their types. INCANT words are derived from ring proper names (all except EMPTY). The result is the same 154-phrase flyweight list, but the source of truth is the grammar, not the flat output.
+The phrase builder walks the command table, expanding each row's direction set and object specifier form into phrases. Object specifiers are derived by combining proper names with their classes. INCANT phrases are derived from the ring proper names (all except EMPTY).
 
 This approach has two advantages over a static flat list:
 
-1. **The grammar is visible in the code.** You can see structure (6 object types, 9 ring proper names, 5 commands taking a hand) that a flat list buries in 154 opaque strings.
+1. **The grammar is visible in the code.** The direction table and object vocabulary mirror the grammar productions directly.
 
-2. **Changes are localized.** Adding a proper name means adding one entry to the parts dictionary. Specifiers, GET/PULL phrases, and INCANT words update automatically through the rules. In a flat list, you'd recompute offsets across multiple sections.
+2. **Changes are localized.** Adding a proper name means adding one entry to `proper_names`. Specifiers, GET/PULL phrases, and INCANT words update automatically.
 
 ---
 
@@ -256,43 +241,28 @@ per-frame notifier:
     → invalid indices print a warning and are ignored
 ```
 
-The command grammar's building blocks live in a table called `COMMAND_PARTS` — directions, object classes, and proper names keyed by class (values listed in §1). At module load, a private function builds the 31 object specifiers by combining each class name with its proper names, then another builds the full ordered list of 154 command phrases from those specifiers and the combination rules. The resulting list is stored in `COMMAND_PHRASES`; its order is the shared contract with `_COMMAND_PHRASES` in `commands.py`.
+The command grammar's building blocks live in a table called `COMMAND_PARTS` — `directions`, `object_classes`, and `proper_names` (values listed in §1). At module load, a private function builds the 31 object specifiers by combining each class name with its proper names, then another builds the full ordered list of 154 command phrases from those specifiers and the direction table. The resulting list is stored in `COMMAND_PHRASES`; its order is the shared contract with `_COMMAND_PHRASES` in `commands.py`.
 
 ```
 _build_object_specifiers()
-    → iterates COMMAND_PARTS.classes
-    → for each class, adds the class name alone
-    → then adds each proper name + class combination
-    → returns 31 specifiers
+    → walks the six object classes
+    → for each class, adds the bare class name as a specifier
+    → then adds each proper name followed by its class
+    → yields 31 specifiers
 
 _build_phrases()
-    → adds MOVE phrases: bare, BACK, LEFT, RIGHT
-    → adds TURN phrases: LEFT, RIGHT, AROUND
-    → adds CLIMB phrases: UP, DOWN
-    → adds EXAMINE and LOOK (no parameters)
-    → for each of ATTACK, USE, DROP, STOW, REVEAL: adds LEFT and RIGHT
-    → for GET and PULL: adds every combination of LEFT/RIGHT × object specifier (2 × 31 = 62 each)
-    → for INCANT: adds every ring proper name except EMPTY (9)
-    → returns the full 154-phrase ordered list
+    → builds the full phrase list in order
+    → expands direction sets for each command word in the command table
+    → expands object specifiers for GET and PULL (62 each)
+    → expands ring proper names for INCANT (9, all except EMPTY)
+    → produces 154 command phrases
 ```
 
 ### `commands.py`
 
-The module defines the same grammar constants as the Lua side, in dependency order: object classes, proper names keyed by class, a direction table mapping each command word to its valid direction values, generated object specifiers, and the generated phrase list whose order is the shared contract. A reverse-lookup dict maps phrases back to indices for debugging. Two private functions mirror the Lua builder functions; INCANT phrases are derived from the ring proper names minus `"EMPTY"` — no separate incantation words constant.
+The module defines the same grammar constants as the Lua side: object classes, proper names keyed by class, and a direction table mapping each command word to its valid direction values. Two private functions mirror the Lua builder functions. At import time, they build the 31 object specifiers and then the full 154-phrase ordered list; INCANT phrases are derived from the ring proper names minus `"EMPTY"` — no separate incantation words constant. The phrase list's order is the shared contract with Lua's phrase list.
 
-```
-_build_object_specifiers()
-    → iterates object classes
-    → for each class, adds the class name alone
-    → then adds each proper name + class combination
-    → returns 31 specifiers
-
-_build_phrases()
-    → follows the same phrase construction rules as Lua's _build_phrases()
-    → returns the full 154-phrase ordered list
-```
-
-**`DaggorathCommand`** is a frozen dataclass wrapping a validated command index. Construction validates that the index is in range 0–153 and raises `ValueError` otherwise. A `phrase` property returns the human-readable command string.
+`DaggorathCommand` is a frozen dataclass wrapping a validated command index. Construction validates that the index is in range 0–153 and raises `ValueError` otherwise. A `phrase` property returns the human-readable command string.
 
 ## Reference Documents
 

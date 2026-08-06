@@ -318,7 +318,7 @@ Two classes: `DaggorathStateSchema` (flyweight) and `DaggorathState` (immutable 
 The field definitions are a class attribute named `FIELDS` — a tuple of `(name, offset, width)` 3-tuples in the same order as Lua's `SCHEMA`. No dataclass wrapper. `FRAME_LEN` is 15 (9 u8 + 3 u16 fields).
 
 ```
-DaggorathStateSchema.unpack(data)
+_schema.unpack(data)
     → validates data length against FRAME_LEN
     → iterates FIELDS
     → reads u8 via direct byte index, u16 via struct.unpack_from("<H")
@@ -326,7 +326,7 @@ DaggorathStateSchema.unpack(data)
 
 DaggorathState(data)
     → strips trailing newline from raw bytes
-    → delegates to DaggorathStateSchema.unpack()
+    → delegates to _schema.unpack()
     → sets each field as an attribute via object.__setattr__
     → after construction, __setattr__ raises AttributeError (immutable)
 
