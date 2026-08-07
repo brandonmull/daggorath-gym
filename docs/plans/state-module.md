@@ -1,6 +1,6 @@
 # Game State Module
 
-_See [plans/overview.md](overview.md) for project context and architecture._
+_See [overview.md](overview.md) for project context and architecture._
 
 This document addresses four design questions:
 
@@ -83,7 +83,7 @@ opens write socket ──────→   begins watching
 
 ### Field List
 
-All addresses were verified against the authoritative memory map (`emulation/docs/ram.md`) and the 6809 disassembly (`emulation/docs/code.md`). The current `autoboot.lua` has several mislabeled addresses — 6 of its 10 fields pointed to wrong or unknown RAM locations.
+All addresses were verified against the authoritative memory map ([`ram.md`](../references/game/ram.md)) and the 6809 disassembly ([`code.md`](../references/game/code.md)). The current `autoboot.lua` has several mislabeled addresses — 6 of its 10 fields pointed to wrong or unknown RAM locations.
 
 | Field | Bytes | Group | Description |
 |-------|-------|-------|-------------|
@@ -338,10 +338,10 @@ to_array()
 
 | Document | What It Contains |
 |----------|-----------------|
-| `emulation/docs/commands.md` | Original game manual + ROM-derived command grammar, object tables, incantation words |
-| `emulation/docs/ram.md` | Memory map — every known RAM address and what it stores |
-| `emulation/docs/code.md` | Full 6809 disassembly of the game |
+| `docs/references/game/commands.md` | Original game manual + ROM-derived command grammar, object tables, incantation words |
+| `docs/references/game/ram.md` | Memory map — every known RAM address and what it stores |
+| `docs/references/game/code.md` | Full 6809 disassembly of the game |
 | `sandbox/README.md` | How the TCP socket communication works (emu.file, port architecture) |
 | `README.md` | Project overview, milestones, setup instructions |
-| `plans/overview.md` | Project context and architecture |
-| `plans/commands-module.md` | Companion plan for the commands module |
+| `docs/plans/overview.md` | Project context and architecture |
+| `docs/plans/commands-module.md` | Companion plan for the commands module |

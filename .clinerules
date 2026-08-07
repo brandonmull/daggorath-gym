@@ -8,7 +8,7 @@ Training an RL bot to play Dungeons of Daggorath (1982) in MAME + Gymnasium.
 - Windows 11 + WSL (Ubuntu)
 - MAME runs in WSL, WSLg provides display
 - No Docker — project runs bare-metal on WSL
-- For headless training: `-video none -sound none` (already in config.py)
+- For headless training: `-video none -sound none`
 
 ## Git
 - **Never commit to git** — do not run `git add`, `git commit`, or any git command that modifies the repository. The user handles all git operations.
@@ -20,16 +20,23 @@ Training an RL bot to play Dungeons of Daggorath (1982) in MAME + Gymnasium.
 
 ## Coding Conventions
 - **README naming conventions are binding.** Lua uses camelCase; Python uses snake_case. Always use `socket` (not `sock`). Multi-word names follow adjective-then-noun order (`state_socket`, not `socket_state`). The README is the authority — check it before choosing any name.
+- **No abbreviated names in Python.** `_state_connection`, not `_state_conn`. `_receive_buffer`, not `_recv_buf`.
+- **Verb+object method names.** Methods that do work should name what they act on: `_create_listening_socket(port)`, not `_bind()` or `_create_server()`.
+- **`local` all Lua variables.** Including module requires: `local state = require("state")`.
+- **No speculative API surface.** Don't add methods, properties, or context-manager protocols unless a real caller exists. Delete unused surface rather than leaving it for "later."
+- **Module docstrings are broad; class docstrings are specific.** No duplication between them. Class docstrings describe spaces, lifecycle, and current status.
+- **No cross-layer implementation comments.** Python code describes its own rationale, not Lua internals. Lua code describes its own rationale, not Python expectations. Each layer documents itself.
 
 ## AI Implementation Constraints
 - **Implement only what the plan specifies.** Do not add configurability, defaults, extra exports, or structural abstractions that the plan does not ask for. The plan is the specification — build to it, not past it.
 - **`__init__.py` exports only what the known consumer needs.** Today that's StableBaselines3, which requires only `DaggorathEnv`.
 
-## Reference Docs (in emulation/docs/)
-- `code.md` — full 6809 disassembly
-- `ram.md` — RAM memory map
-- `hardware.md` — CoCo hardware reference
-- `setup.md` — emulator architecture notes, lite MAME build plans
+## Reference Docs (in docs/references/)
+- `game/commands.md` — original game manual + ROM-derived command grammar
+- `game/ram.md` — RAM memory map
+- `game/code.md` — full 6809 disassembly
+- `mame/hardware.md` — CoCo hardware reference
+- `mame/setup.md` — emulator architecture notes, lite MAME build plans
 
 ## README Writing Principles
 
@@ -112,6 +119,9 @@ When writing or revising files in `plans/`:
     code symbols live in the block title, not the body.
 
 ## Directory Quick Reference
+- `docs/plans/` — pre-build design specifications
+- `docs/reviews/` — post-build design reviews (observations, decisions, deferred items)
+- `docs/references/` — external source material (game manuals, memory maps, disassembly)
 - `daggorath_gym/` — Python Gymnasium env (env.py, bridge.py, state.py, commands.py, paths.py)
 - `emulation/` — Lua scripts (autoboot.lua, state.lua, commands.lua)
 - `emulation/hash/` — MAME hash files (coco_cart.xml with Shield Fix)

@@ -15,14 +15,14 @@ A Gymnasium environment for training an RL agent to play **Dungeons of Daggorath
    ```
 
 Usage tips:
-- **Headless training**: `-video none -sound none` (controlled via `config.py` or MameBridge)
+- **Headless training**: `-video none -sound none` (pass `MameConfig(window=False, sound="none")` to MameOperator)
 - **With sound**: `-sound sdl` (best quality on WSLg); upgrade SDL2 with `sudo apt install --only-upgrade libsdl2-2.0-0`
 
 ## Known Issues
 
 | # | Severity | Issue |
 |---|---|---|
-| 1 | P1 | Several observer.lua RAM addresses may not match actual memory map (see `emulation/docs/ram.md`) |
+| 1 | P1 | Readiness detection not yet implemented — reset() returns first frame (see `docs/reviews/env.md`) |
 | 2 | P1 | No gym environment registration: `gymnasium.make('Daggorath-v0')` won't resolve |
 | 3 | P2 | commands.lua action dispatch from Python not yet wired |
 | 4 | P2 | WSLg audio has intermittent jitter on synthesized sounds (use `-sound sdl` + update SDL2) |
@@ -60,9 +60,8 @@ CoCo 3 system ROM (coco3.zip)
 
 | File | Role |
 |------|------|
-| `daggorath_gym/env.py` | DaggorathEnv (Gymnasium) |
-| `daggorath_gym/bridge.py` | MameBridge — TCP servers + MAME lifecycle |
-| `daggorath_gym/config.py` | MAME CLI flags |
+| `daggorath_gym/environment.py` | DaggorathEnv (Gymnasium) |
+| `daggorath_gym/emulator.py` | MameOperator — TCP servers + MAME lifecycle |
 | `daggorath_gym/state.py` | Game state deserialization |
 | `daggorath_gym/commands.py` | Command phrase enumeration |
 | `daggorath_gym/paths.py` | Project path resolution |
@@ -71,7 +70,7 @@ CoCo 3 system ROM (coco3.zip)
 | `emulation/commands.lua` | Command phrase dispatch via natkeyboard |
 | `emulation/paths.lua` | Socket config (host, ports) |
 | `emulation/roms/` | coco3.zip, daggorath.zip |
-| `emulation/docs/` | 6809 disassembly, RAM map, hardware ref |
+| `docs/references/` | 6809 disassembly, RAM map, command grammar, hardware ref |
 | `sandbox/` | Validated TCP sandbox (see its README) |
 | `setup.sh` | One-shot MAME + ROM + Lua installer |
 | `pyproject.toml` | Pip package config |
@@ -98,9 +97,10 @@ CoCo 3 system ROM (coco3.zip)
 
 ## Reference Documentation
 
-- **Code Disassembly**: [emulation/docs/code.md](emulation/docs/code.md)
-- **RAM Memory Map**: [emulation/docs/ram.md](emulation/docs/ram.md)
-- **CoCo Hardware**: [emulation/docs/hardware.md](emulation/docs/hardware.md)
-- **Emulator Setup Notes**: [emulation/docs/setup.md](emulation/docs/setup.md)
+- **Code Disassembly**: [docs/references/game/code.md](docs/references/game/code.md)
+- **RAM Memory Map**: [docs/references/game/ram.md](docs/references/game/ram.md)
+- **Command Grammar**: [docs/references/game/commands.md](docs/references/game/commands.md)
+- **CoCo Hardware**: [docs/references/mame/hardware.md](docs/references/mame/hardware.md)
+- **Emulator Setup Notes**: [docs/references/mame/setup.md](docs/references/mame/setup.md)
 - **Original Source**: https://www.computerarcheology.com/CoCo/Daggorath/
 - **MAME Lua Scripting**: https://docs.mamedev.org/luascript/index.html
