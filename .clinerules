@@ -35,8 +35,11 @@ Training an RL bot to play Dungeons of Daggorath (1982) in MAME + Gymnasium.
 - `game/commands.md` — original game manual + ROM-derived command grammar
 - `game/ram.md` — RAM memory map
 - `game/code.md` — full 6809 disassembly
-- `mame/hardware.md` — CoCo hardware reference
+- `coco/hardware.md` — CoCo hardware reference
 - `mame/setup.md` — emulator architecture notes, lite MAME build plans
+- `mame/lua-common.md` — MAME Lua common types and globals (faithful transcription of ref-common.html)
+- `mame/lua-core.md` — MAME Lua core classes (faithful transcription of ref-core.html)
+- **Reference docs are faithful transcriptions of the original source material.** When converting external documentation (MAME docs, hardware specs, game manuals) to markdown, transcribe the full content exactly as published. Do not filter, summarize, editorialize, or add project-specific commentary. Do not omit sections. The purpose of a reference doc is to mirror the original — the reader expects the complete source, not a curated subset.
 
 ## README Writing Principles
 

@@ -40,7 +40,7 @@ This records observations, concerns, alternatives, and decisions from a line-by-
 
 ---
 
-## 3. `reset()` — readiness detection
+## 3. `reset()` — command readiness detection
 
 **Observation:** `reset()` calls `self._bridge.recv()` and returns the first frame. During MAME startup, the game runs a demo loop (`game_mode=0xFF`) before transitioning to live play (`game_mode=0x00`). The first frame `recv()` returns may be from the demo — the agent would observe a game it can't control.
 
@@ -56,7 +56,7 @@ This records observations, concerns, alternatives, and decisions from a line-by-
 
 ---
 
-## 4. `step()` — command-to-state delay
+## 4. `step()` — command execution detection
 
 **Observation:** `step()` sends a command byte, then immediately blocks on `recv()`. The next state frame reflects the game state *before* the command had time to take effect (or mid-effect). The game needs at least one frame to parse the command through its text parser, and potentially many more for animation, combat resolution, or creature movement.
 
@@ -68,7 +68,7 @@ This records observations, concerns, alternatives, and decisions from a line-by-
 - **Input ring buffer watch.** The input ring buffer at `0x02D1–0x02F0` (head at `0x02BC`, tail at `0x02BD`) tracks what the game's parser has consumed. After `natkeyboard:post()`, wait until `inputHead` advances — the parser consumed the command. Then sample state. This avoids visual processing entirely.
 - **Console output watch.** Watch the CoCo's display for the command echo (the player's typed command appearing in the command area). More complex, requires visual processing or text output RAM monitoring.
 
-**Decision:** Sandbox experiment needed — same scope as readiness detection. The input ring buffer is the most promising signal. Validate that `natkeyboard:post()` delivery is observable via head/tail movement, and that the parser consumes in a predictable timeframe.
+**Decision:** Sandbox experiment needed — same scope as command readiness detection. The input ring buffer is the most promising signal. Validate that `natkeyboard:post()` delivery is observable via head/tail movement, and that the parser consumes in a predictable timeframe.
 
 ---
 
@@ -161,7 +161,7 @@ The following were discussed and decided — they are implementation details, no
 | Topic | When |
 |-------|------|
 | Gym space architecture (how env constructs action/observation spaces) | After file reviews complete — dedicated session with gymnasium docs |
-| Readiness detection | Sandbox experiment — validate RAM signals for "game ready" |
+| Command readiness detection | Sandbox experiment — validate RAM signals for "game ready" |
 | Command execution detection | Sandbox experiment — validate input ring buffer for "command consumed" |
 | MAME configuration flow (how bridge kwargs reach `reset()`) | After getting familiar with gymnasium conventions |
 | Reward function design | Separate planning effort (new plan doc) |

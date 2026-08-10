@@ -1,0 +1,10 @@
+{
+	"plugin": {
+		"name": "plugin-lifecycle",
+		"description": "Tests whether a MAME plugin survives the demo-to-live transition in Dungeons of Daggorath",
+		"version": "0.0.1",
+		"author": "Daggorath Gym",
+		"type": "plugin",
+		"start": "true"
+	}
+}

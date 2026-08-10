@@ -1,5 +1,7 @@
 #Misc
 logs/
+*.log
+log.txt
 
 # Virtual Environment
 .venv/

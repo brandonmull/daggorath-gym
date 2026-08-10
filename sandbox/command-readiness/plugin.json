@@ -1,0 +1,10 @@
+{
+  "plugin": {
+    "name": "command-readiness",
+    "description": "Logs Daggorath RAM signals to determine when the game is ready for agent commands",
+    "version": "0.0.1",
+    "author": "Daggorath Gym",
+    "type": "plugin",
+    "start": "true"
+  }
+}
