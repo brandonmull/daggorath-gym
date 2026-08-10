@@ -1,0 +1,10 @@
+{
+  "plugin": {
+    "name": "command-detection",
+    "description": "Logs Daggorath RAM signals to discover what addresses detect command input consumption via the in-game console",
+    "version": "0.0.1",
+    "author": "Daggorath Gym",
+    "type": "plugin",
+    "start": "true"
+  }
+}
