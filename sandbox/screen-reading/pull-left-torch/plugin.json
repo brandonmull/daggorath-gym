@@ -1,0 +1,10 @@
+{
+  "plugin": {
+    "name": "pull-left-torch",
+    "description": "Experiment: decode 'PULL LEFT TORCH' from the command area screen buffer",
+    "version": "0.0.1",
+    "author": "Daggorath Gym",
+    "type": "plugin",
+    "start": "false"
+  }
+}

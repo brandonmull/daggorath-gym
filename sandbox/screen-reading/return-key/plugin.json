@@ -1,0 +1,10 @@
+{
+  "plugin": {
+    "name": "return-key",
+    "description": "Experiment: what does a single Return keystroke write to the screen buffer?",
+    "version": "0.0.1",
+    "author": "Daggorath Gym",
+    "type": "plugin",
+    "start": "false"
+  }
+}
