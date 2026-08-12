@@ -33,3 +33,11 @@ Signature updated to `step(self, action: int) -> tuple[np.ndarray, float, bool, 
 ### `reset()` — gymnasium-aligned signature
 
 Changed from `**kwargs` to explicit `reset(self, *, seed=None, options=None)`. Returns `{"seed": seed}` in info dict per gymnasium convention. Seed not yet wired to an RNG.
+
+---
+
+_12 Aug 2026_
+
+### `socket_config` → `ipc_config`
+
+The `__init__` parameter renamed from `socket_config` to `ipc_config` and the import changed from `SocketConfig` to `IpcConfig`. Reflects the hybrid IPC architecture — the state channel is now a FIFO, not a TCP socket.

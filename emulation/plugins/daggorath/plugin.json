@@ -1,0 +1,10 @@
+{
+	"plugin": {
+		"name": "daggorath",
+		"description": "Daggorath Gym — RL training bridge for Dungeons of Daggorath",
+		"version": "0.0.1",
+		"author": "Daggorath Gym",
+		"type": "plugin",
+		"start": "true"
+	}
+}

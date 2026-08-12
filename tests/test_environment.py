@@ -27,16 +27,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Force-reload to bypass stale editable-install cache
 import daggorath_gym
 importlib.reload(daggorath_gym)
-from daggorath_gym.emulator import SocketConfig
+from daggorath_gym.emulator import IpcConfig
 from daggorath_gym.environment import DaggorathEnv
 from daggorath_gym.state import FIELDS
 
-_SOCKET = SocketConfig(state_port=15200, command_port=15201)
+_IPC = IpcConfig(state_fifo_path="/tmp/daggorath-test-env", command_port=15201)
 
 
 def test_reset_returns_valid_observation():
     """reset() produces a uint16 observation array matching the state schema."""
-    env = DaggorathEnv(socket_config=_SOCKET)
+    env = DaggorathEnv(ipc_config=_IPC)
     try:
         observation, info = env.reset()
 
@@ -49,7 +49,7 @@ def test_reset_returns_valid_observation():
 
 def test_close_cleans_up():
     """close() shuts down the emulator without error."""
-    env = DaggorathEnv(socket_config=_SOCKET)
+    env = DaggorathEnv(ipc_config=_IPC)
     env.reset()
     env.close()
 

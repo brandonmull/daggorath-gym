@@ -25,15 +25,17 @@ This document addresses four design questions:
 **Startup:**
 
 ```
-  environment starts bridge
+  environment starts emulator
     │
-    ├─ bridge opens command socket as server (15001)
+    ├─ emulator opens command socket as server (port 15001)
     │
-    └─ bridge launches MAME as subprocess
+    └─ emulator launches MAME as subprocess
         │
         └─ MAME runs autoboot
             │
-            └─ autoboot connects to command socket as read-only client
+            └─ autoboot hands off to commands.lua
+                │
+                └─ commands.lua connects to command socket as read-only client (emu.file("r"))
 ```
 
 **Runtime** (command flow — Python sends, Lua receives):
@@ -42,7 +44,7 @@ This document addresses four design questions:
 ┌─ Python ──────────────────────────────────────────┐
 │  env.py        selects command by index            │
 │  commands.py   defines ordered phrase list         │
-│  bridge.py     sends 1 byte over TCP               │
+│  emulator.py   sends 1 byte over TCP               │
 └──────────────────────┬────────────────────────────┘
                        │ 1 byte
                        ▼
@@ -61,8 +63,8 @@ This document addresses four design questions:
 ## Data Flow
 
 ```
-env.py / bridge.py                port 15001          commands.lua            ──── (external) ────
-──────────────────                ──────────          ────────────
+env.py / emulator.py              port 15001          commands.lua            ──── (external) ────
+────────────────────              ──────────          ────────────
 selects command by index
 sends 1 byte ──────────────→  1 byte ──→  frame callback fires
                                             │
@@ -161,7 +163,7 @@ The typing-timing and command-buffering sandboxes confirmed:
 
 A command is dispatched on the same frame it arrives — no frame-skipping, throttling, or batching. The sandboxes confirmed that commands can be posted at full frame rate without loss. The natural keyboard interface is acquired once on first use and reused across all subsequent frames.
 
-On the Python side, `bridge.send()` accepts a typed command value object rather than a raw integer. The object validates the index at construction time, so an invalid index fails at the Python call site rather than being sent to the emulator as a corrupted byte.
+On the Python side, `emulator.send()` accepts a typed command value object rather than a raw integer. The object validates the index at construction time, so an invalid index fails at the Python call site rather than being sent to the emulator as a corrupted byte.
 
 ### Module Names
 
@@ -170,7 +172,7 @@ On the Python side, `bridge.send()` accepts a typed command value object rather 
 | Lua | `commands.lua` | `commands` (module table) | Directly describes what the module dispatches |
 | Python | `commands.py` | — (exposes `_COMMAND_PHRASES` as ordered list) | Same stem, no prefix needed |
 
-Both sides share the same module name (`commands`). The Lua module exposes a single public function (`commands.start(socket)`) following the same pattern as `state.watch()`. The Python module exposes the ordered command phrase list as the shared contract.
+Both sides share the same module name (`commands`). The Lua module exposes a single public function (`commands.beginProcessing(commandSocket)`) following the same pattern as `state.beginWatching()`. The Python module exposes the ordered command phrase list as the shared contract.
 
 `command` is the consistent term for the channel on port 15001. `action` is a Gymnasium term — it belongs to the framework (`action_space`, `step(action)`), not to our component names.
 
@@ -197,7 +199,7 @@ This approach has two advantages over a static flat list:
 
 ### Python Side
 
-The bridge's `send()` writes a single byte to the command socket. The environment's `step()` selects the index from the action space, wraps it in a value object, sends it, and awaits the next state observation.
+The emulator's `send()` writes a single byte to the command socket. The environment's `step()` selects the index from the action space, wraps it in a value object, sends it, and awaits the next state observation.
 
 ---
 
@@ -227,10 +229,10 @@ The bridge's `send()` writes a single byte to the command socket. The environmen
 
 ### `commands.lua`
 
-`commands.start(socket)` is the entry point.
+`commands.beginProcessing(commandSocket)` is the entry point.
 
 ```
-commands.start(socket)
+commands.beginProcessing(commandSocket)
     → on the first frame, primes the CoCo input buffer with two blank carriage returns
     → registers a per-frame notifier
 
@@ -270,7 +272,8 @@ The module defines the same grammar constants as the Lua side: object classes, p
 | Document | What It Contains |
 |----------|-----------------|
 | `emulation/docs/commands.md` | Original game manual + ROM-derived command grammar, object tables, incantation words |
-| `plans/state-module.md` | Companion plan for the game state module |
-| `plans/overview.md` | Project context and architecture |
+| `docs/plans/state-module.md` | Companion plan for the game state module |
+| `docs/plans/overview.md` | Project context and architecture |
+| `docs/findings/ipc.md` | IPC transport evaluation — FIFO for state, TCP for commands |
 | `sandbox/typing-timing/` | Validated natkeyboard:post() delivery |
 | `sandbox/command-buffering/` | Validated no Lua-side buffering needed |

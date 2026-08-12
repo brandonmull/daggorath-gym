@@ -4,7 +4,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 
-from .emulator import MameOperator
+from .emulator import MameOperator, IpcConfig
 from .commands import DaggorathCommand, NUM_COMMANDS
 from .state import NUM_FIELDS
 
@@ -18,11 +18,11 @@ class DaggorathEnv(gym.Env):
     Status: reward and termination raise NotImplementedError (awaiting design).
     """
 
-    def __init__(self, mame_config=None, socket_config=None):
+    def __init__(self, mame_config=None, ipc_config=None):
         super(DaggorathEnv, self).__init__()
 
         self._mame_config = mame_config
-        self._socket_config = socket_config
+        self._ipc_config = ipc_config
 
         # Action space: 154 discrete game commands
         self.action_space = spaces.Discrete(NUM_COMMANDS)
@@ -52,7 +52,7 @@ class DaggorathEnv(gym.Env):
 
         self._emulator = MameOperator(
             mame_config=self._mame_config,
-            socket_config=self._socket_config,
+            ipc_config=self._ipc_config,
         )
         self._emulator.start()
 

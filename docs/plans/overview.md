@@ -8,47 +8,51 @@ _A newcomer-friendly explanation of what we're building and why._
 
 We're training an AI to play **Dungeons of Daggorath**, a 1982 text-adventure / dungeon-crawler game for the TRS-80 Color Computer. The game runs inside **MAME**, an emulator that simulates the original hardware — including a Motorola 6809 CPU running at ~0.89 MHz (yes, megahertz, singular).
 
-MAME lets us attach **Lua scripts** that run alongside the emulated machine. These scripts can read the emulated RAM (to see what's happening in the game) and inject keystrokes (to control the game). On the other side, a **Python** program talks to MAME over TCP sockets and presents everything as a standard **Gymnasium** environment (the same interface used by OpenAI Gym for reinforcement learning).
+MAME lets us attach **Lua scripts** that run alongside the emulated machine. These scripts can read the emulated RAM (to see what's happening in the game) and inject keystrokes (to control the game). On the other side, a **Python** program communicates with MAME over a hybrid IPC bridge and presents everything as a standard **Gymnasium** environment (the same interface used by OpenAI Gym for reinforcement learning).
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                      Python (our code)                      │
-│  ┌──────────┐    ┌──────────────┐    ┌───────────────────┐  │
-│  │ bridge.py │    │ state.py    │    │     env.py        │  │
-│  │ TCP comms │    │ deserialize  │    │ Gymnasium Env     │  │
-│  │           │    │ game state   │    │ step() / reset()  │  │
-│  └─────┬─────┘    └──────▲───────┘    └───────────────────┘  │
-│        │                 │                                    │
-│        │ raw bytes       │ typed attributes                  │
-│        │                 │ (obs.heart_rate, obs.player_x...) │
-├────────┼─────────────────┼────────────────────────────────────┤
-│        │    TCP sockets  │                                    │
-│        │    (localhost)  │                                    │
-├────────┼─────────────────┼────────────────────────────────────┤
-│        ▼                 │                                    │
-│  ┌──────────────────────────────┐                             │
-│  │         MAME (emulator)      │                             │
-│  │  ┌────────────────────────┐  │                             │
-│  │  │   Lua scripts           │  │                             │
-│  │  │   - autoboot.lua        │  │                             │
-│  │  │   - state.lua           │  │                             │
-│  │  │   - commands.lua        │  │                             │
-│  │  └────────────────────────┘  │                             │
-│  │  ┌────────────────────────┐  │                             │
-│  │  │   Emulated CoCo 3       │  │                             │
-│  │  │   - 6809 CPU            │  │                             │
-│  │  │   - 16-64K RAM          │  │                             │
-│  │  │   - Daggorath cartridge │  │                             │
-│  │  └────────────────────────┘  │                             │
-│  └──────────────────────────────┘                             │
-└─────────────────────────────────────────────────────────────┘
+│  ┌──────────────┐   ┌──────────────┐   ┌────────────────┐  │
+│  │ emulator.py  │   │  state.py    │   │     env.py     │  │
+│  │ IPC bridge   │   │ deserialize  │   │ Gymnasium Env  │  │
+│  │              │   │ game state   │   │ step()/reset() │  │
+│  └──┬───────┬───┘   └──────▲───────┘   └────────────────┘  │
+│     │       │              │                                 │
+│     │ FIFO  │ TCP          │ typed attributes               │
+│     │ write │ socket       │ (obs.heart_rate, obs.at_cell_x)│
+│     │       │ (port 15001) │                                 │
+├─────┼───────┼──────────────┼─────────────────────────────────┤
+│     │       │              │                                 │
+├─────┼───────┼──────────────┼─────────────────────────────────┤
+│     │       ▼              │                                 │
+│     │  ┌──────────────────────────────┐                      │
+│     │  │      MAME (emulator)         │                      │
+│     │  │  ┌────────────────────────┐  │                      │
+│     │  │  │  Lua scripts            │  │                      │
+│     │  │  │  - autoboot.lua         │  │                      │
+│     │  │  │  - state.lua            │  │                      │
+│     │◄─┼──│    (writes state FIFO)  │  │                      │
+│     │  │  │  - commands.lua         │  │                      │
+│     │  │  │    (reads command TCP)  │  │                      │
+│     │  │  └────────────────────────┘  │                      │
+│     │  │  ┌────────────────────────┐  │                      │
+│     │  │  │  Emulated CoCo 3        │  │                      │
+│     │  │  │  - 6809 CPU             │  │                      │
+│     │  │  │  - 16-64K RAM           │  │                      │
+│     │  │  │  - Daggorath cartridge  │  │                      │
+│     │  │  └────────────────────────┘  │                      │
+│     │  └──────────────────────────────┘                      │
+└─────┼────────────────────────────────────────────────────────┘
+      │ state FIFO (/tmp/daggorath-state)
+      │ raw bytes, every frame
 ```
 
 ## Key Design Choices
 
-- **Two unidirectional TCP sockets** — port 15000 (MAME → Python, game state) and port 15001 (Python → MAME, game commands). Using MAME's built-in `emu.file` socket API. Proven in the `sandbox/` validation.
-- **No external Lua dependencies** — MAME ships its own embedded Lua interpreter. LuaRocks packages cannot be loaded. All Lua scripts use only MAME's built-in APIs.
-- **Raw byte wire format** — no JSON on either socket. Compact, fast, and avoids serialization overhead on the emulated CPU.
+- **Hybrid IPC** — a named pipe (FIFO) for game state (MAME → Python, high-throughput write-only) and a TCP socket on port 15001 for commands (Python → MAME, low-throughput read-only). The state channel uses standard Lua `io.open("w")` to bypass `emu.file`'s fragility under sustained write load; the command channel stays on `emu.file("r")` which is documented as stable and provides the non-blocking reads that FIFOs can't do. See `docs/findings/ipc.md` for the evaluation of alternatives.
+- **No external Lua dependencies** — MAME ships its own embedded Lua interpreter. LuaRocks packages cannot be loaded. All Lua scripts use only MAME's built-in APIs and the standard Lua `io` library.
+- **Raw byte wire format** — no JSON on either channel. Compact, fast, and avoids serialization overhead on the emulated CPU.
 - **Flyweight pattern** — shared schema objects on both sides, per-frame/per-command value objects. Schema defines the contract once; instances are light.
 
 ## Naming Conventions

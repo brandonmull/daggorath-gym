@@ -1,10 +1,10 @@
-"""MAME operator — lifecycle management and socket communication.
+"""MAME operator — lifecycle management and hybrid IPC communication.
 
-Encapsulates the MAME subprocess and two-way TCP communication behind
-a simple start/stop/recv/send API. Two unidirectional sockets:
+Encapsulates the MAME subprocess and two-channel IPC behind
+a simple start/stop/recv/send API.
 
-    Port 15000  MAME (emu.file "w") --> Python  (game state)
-    Port 15001  Python               --> MAME    (command dispatch)
+    State channel:   named pipe (FIFO) — MAME writes, Python reads
+    Command channel: TCP socket         — Python writes, MAME reads
 """
 
 import os
@@ -22,10 +22,10 @@ from .state import DaggorathState
 # ---------- Configuration ----------
 
 @dataclass(frozen=True)
-class SocketConfig:
-    """Parameters for the two TCP sockets between Python and MAME."""
-    listen_host: str = "127.0.0.1"
-    state_port: int = 15000
+class IpcConfig:
+    """Parameters for the hybrid IPC channels between Python and MAME."""
+    state_fifo_path: str = "/tmp/daggorath-state"
+    command_host: str = "127.0.0.1"
     command_port: int = 15001
     connection_timeout: float = 30
 
@@ -35,7 +35,7 @@ class MameConfig:
     """Parameters for the MAME subprocess."""
     rom_path: str = os.path.join(PROJECT_PATH, "emulation", "roms")
     hash_path: str = os.path.join(PROJECT_PATH, "emulation", "hash")
-    autoboot_script_path: str = os.path.join(EMULATION_PATH, "autoboot.lua")
+    plugin_path: str = os.path.join(EMULATION_PATH, "plugins", "daggorath")
     sound: str = "sdl"
     window: bool = True
 
@@ -43,66 +43,80 @@ class MameConfig:
 # ---------- MameOperator ----------
 
 class MameOperator:
-    """Operates a MAME subprocess and communicates with it over TCP."""
+    """Operates a MAME subprocess and communicates with it over hybrid IPC."""
 
     def __init__(
         self,
         mame_config: Optional[MameConfig] = None,
-        socket_config: Optional[SocketConfig] = None,
+        ipc_config: Optional[IpcConfig] = None,
     ) -> None:
-        # ---------- what to run and how to connect ----------
         self._mame_config = mame_config or MameConfig()
-        self._socket_config = socket_config or SocketConfig()
+        self._ipc_config = ipc_config or IpcConfig()
 
         # ---------- the emulator itself ----------
         self._mame_process: Optional[subprocess.Popen] = None
 
-        # ---------- the receiver ----------
-        self._state_socket: Optional[socket.socket] = None
-        self._state_connection: Optional[socket.socket] = None
-        self._receive_buffer = b""
+        # ---------- state channel (FIFO) ----------
+        self._state_fd: Optional[int] = None
 
-        # ---------- the transmitter ----------
+        # ---------- command channel (TCP) ----------
         self._command_socket: Optional[socket.socket] = None
         self._command_connection: Optional[socket.socket] = None
+
+        # ---------- receive buffer ----------
+        self._receive_buffer = b""
 
     # ---------- lifecycle ----------
 
     def start(self) -> None:
-        """Create listening sockets, launch MAME, and wait for both connections."""
+        """Create the state FIFO, open the command socket, launch MAME, and handshake."""
 
-        # ---------- raise the antennae ----------
-        self._state_socket = self._create_listening_socket(self._socket_config.state_port)
-        self._command_socket = self._create_listening_socket(self._socket_config.command_port)
+        # ---------- create the state FIFO ----------
+        fifo_path = self._ipc_config.state_fifo_path
+        self._remove_stale_fifo()
+        os.mkfifo(fifo_path)
+        self._state_fd = os.open(fifo_path, os.O_RDWR)
+        print(f"[MameOperator] State FIFO ready: {fifo_path}")
+
+        # ---------- open the command socket ----------
+        self._command_socket = self._create_listening_socket(self._ipc_config.command_port)
 
         # ---------- bring up the game ----------
         self._mame_process = self._launch_mame()
 
-        # ---------- lock in the signal ----------
-        connections = self._wait_for_connections([self._state_socket, self._command_socket])
-        self._state_connection = connections[0]
-        self._command_connection = connections[1]
+        # ---------- accept the command connection ----------
+        deadline = time.monotonic() + self._ipc_config.connection_timeout
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Timed out waiting for command connection")
+        self._command_socket.settimeout(remaining)
+        self._command_connection, address = self._command_socket.accept()
+        print(f"[MameOperator] Command connection accepted from {address[0]}:{address[1]}")
 
-        print("[MameOperator] Ready — receiving game state, accepting commands")
+        print("[MameOperator] Ready")
 
     def stop(self) -> None:
-        """Close sockets and terminate the MAME subprocess."""
+        """Close IPC channels and terminate the MAME subprocess."""
 
-        # ---------- drop the signal ----------
-        for connected_socket in (self._state_connection, self._command_connection):
-            if connected_socket is None:
-                continue
+        # ---------- close command channel ----------
+        if self._command_connection is not None:
             try:
-                connected_socket.close()
+                self._command_connection.close()
             except OSError:
                 pass
-        for listening_socket in (self._state_socket, self._command_socket):
-            if listening_socket is None:
-                continue
+        if self._command_socket is not None:
             try:
-                listening_socket.close()
+                self._command_socket.close()
             except OSError:
                 pass
+
+        # ---------- close state FIFO ----------
+        if self._state_fd is not None:
+            try:
+                os.close(self._state_fd)
+            except OSError:
+                pass
+            self._remove_stale_fifo()
 
         # ---------- shut down the game ----------
         if self._mame_process is not None and self._mame_process.poll() is None:
@@ -114,10 +128,9 @@ class MameOperator:
                 self._mame_process.wait()
 
         # ---------- clear the board ----------
-        self._state_socket = None
         self._command_socket = None
-        self._state_connection = None
         self._command_connection = None
+        self._state_fd = None
         self._mame_process = None
         self._receive_buffer = b""
 
@@ -131,14 +144,13 @@ class MameOperator:
                 line, self._receive_buffer = self._receive_buffer.split(b"\n", 1)
                 return DaggorathState(line)
 
-            if self._state_connection is None:
+            if self._state_fd is None:
                 raise ConnectionError("Operator not started or already stopped")
 
-            # ---------- read from the wire ----------
             try:
-                chunk = self._state_connection.recv(4096)
-            except ConnectionResetError:
-                raise ConnectionError("MAME disconnected (connection reset)")
+                chunk = os.read(self._state_fd, 4096)
+            except OSError:
+                raise ConnectionError("MAME disconnected (FIFO read error)")
             if not chunk:
                 raise ConnectionError("MAME disconnected (EOF)")
             self._receive_buffer += chunk
@@ -149,7 +161,6 @@ class MameOperator:
         if self._command_connection is None:
             raise ConnectionError("Operator not started or already stopped")
 
-        # ---------- transmit a command ----------
         payload = bytes([command.index])
         try:
             self._command_connection.sendall(payload)
@@ -158,61 +169,37 @@ class MameOperator:
 
     # ---------- internals ----------
 
+    def _remove_stale_fifo(self) -> None:
+        """Remove a stale FIFO file if it exists."""
+        fifo_path = self._ipc_config.state_fifo_path
+        if os.path.exists(fifo_path):
+            os.unlink(fifo_path)
+
     def _create_listening_socket(self, port: int) -> socket.socket:
         """Create a TCP socket, bind it, and begin listening."""
-        host = self._socket_config.listen_host
+        host = self._ipc_config.command_host
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((host, port))
         server.listen(1)
-        print(f"[MameOperator] Listening on {host}:{port}")
+        print(f"[MameOperator] Command socket listening on {host}:{port}")
         return server
-
-    def _wait_for_connections(self, listening_sockets: list) -> list[socket.socket]:
-        """Block until every listening socket has an accepted connection.
-
-        Returns:
-            Connected sockets in the same order as listening_sockets.
-
-        Raises:
-            TimeoutError: If not all sockets connect within the timeout.
-        """
-        deadline = time.monotonic() + self._socket_config.connection_timeout
-        connected = [None] * len(listening_sockets)
-
-        for index, server_socket in enumerate(listening_sockets):
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise TimeoutError(
-                    f"Timed out waiting for connection {index + 1} of {len(listening_sockets)}"
-                )
-            server_socket.settimeout(remaining)
-            connection, address = server_socket.accept()
-            connected[index] = connection
-            print(f"[MameOperator] Accepted connection from {address[0]}:{address[1]}")
-
-        return connected
 
     def _launch_mame(self) -> subprocess.Popen:
         """Spawn the MAME subprocess and return the Popen handle."""
-        
+
         config = self._mame_config
 
         # ---------- prepare the scratch directory ----------
         mame_scratch_directory = os.path.join(PROJECT_PATH, ".mame")
         os.makedirs(mame_scratch_directory, exist_ok=True)
 
-        # autoboot_delay must be at least 1 so the CoCo input buffer
-        # is ready by the time commands.lua posts its priming carriage returns.
-        autoboot_delay = 1
-
         # ---------- assemble the command ----------
         command_line = [
             "mame", "coco3", "daggorath",
             "-rompath", config.rom_path,
             "-hashpath", config.hash_path,
-            "-autoboot_script", config.autoboot_script_path,
-            "-autoboot_delay", str(autoboot_delay),
+            "-plugin", config.plugin_path,
             "-cfg_directory", mame_scratch_directory,
             "-skip_gameinfo",
             "-nonvram_save",
@@ -223,8 +210,8 @@ class MameOperator:
 
         # ---------- fire it up ----------
         env = os.environ.copy()
-        env["SOCKET_LISTEN_HOST"] = self._socket_config.listen_host
-        env["SOCKET_STATE_PORT"] = str(self._socket_config.state_port)
-        env["SOCKET_COMMAND_PORT"] = str(self._socket_config.command_port)
+        env["STATE_FIFO_PATH"] = self._ipc_config.state_fifo_path
+        env["COMMAND_HOST"] = self._ipc_config.command_host
+        env["COMMAND_PORT"] = str(self._ipc_config.command_port)
         print(f"[MameOperator] Launching: {' '.join(command_line)}")
         return subprocess.Popen(command_line, cwd=EMULATION_PATH, env=env)

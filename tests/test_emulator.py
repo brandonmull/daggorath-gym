@@ -27,16 +27,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Force-reload to bypass stale editable-install cache
 import daggorath_gym
 importlib.reload(daggorath_gym)
-from daggorath_gym.emulator import MameOperator, SocketConfig
+from daggorath_gym.emulator import MameOperator, IpcConfig
 from daggorath_gym.state import FIELDS, DaggorathState
 
-# Each test gets its own port range to avoid collisions.
-_SOCKET = SocketConfig(state_port=15100, command_port=15101)
+# Each test gets its own FIFO path to avoid collisions.
+_IPC = IpcConfig(state_fifo_path="/tmp/daggorath-test-emulator", command_port=15101)
 
 
 def test_operator_starts_and_stops():
     """MameOperator can start, receive a state frame, and stop cleanly."""
-    operator = MameOperator(socket_config=_SOCKET)
+    operator = MameOperator(ipc_config=_IPC)
     try:
         operator.start()
         state = operator.recv()
@@ -47,7 +47,7 @@ def test_operator_starts_and_stops():
 
 def test_state_has_valid_values():
     """Received state fields fall within sensible ranges for a booted game."""
-    operator = MameOperator(socket_config=_SOCKET)
+    operator = MameOperator(ipc_config=_IPC)
     try:
         operator.start()
         state = operator.recv()
@@ -63,7 +63,7 @@ def test_state_has_valid_values():
 
 def test_state_to_array_shape():
     """to_array() produces a schema-consistent output from real MAME data."""
-    operator = MameOperator(socket_config=_SOCKET)
+    operator = MameOperator(ipc_config=_IPC)
     try:
         operator.start()
         state = operator.recv()

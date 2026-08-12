@@ -3,7 +3,7 @@
 -- corresponding command phrase, and dispatches it to the game's text parser.
 --
 -- Public API: commands.beginProcessing(socket)
---   socket: emu.file "r" socket (opened by autoboot)
+--   socket: emu.file "r" socket (opened by init.lua)
 
 local commands = {}
 
@@ -96,6 +96,7 @@ local COMMAND_PHRASES = _build_command_phrases()
 local _socket = nil
 local _keyboard = nil
 local _inputPrimed = false
+local _frameSubscription = nil
 
 -- Per-frame notifier: prime on first frame, then read commands.
 local function _onFrame()
@@ -136,7 +137,7 @@ function commands.beginProcessing(socket)
     end
     _inputPrimed = false
 
-    emu.add_machine_frame_notifier(_onFrame)
+    _frameSubscription = emu.add_machine_frame_notifier(_onFrame)
 end
 
 return commands

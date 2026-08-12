@@ -1,9 +1,9 @@
 -- State reporting module for Dungeons of Daggorath.
 -- Captures 12 game state fields from RAM each frame, serializes as raw bytes,
--- and writes them to the state socket.
+-- and writes them to the state FIFO.
 --
--- Public API: state.beginWatching(socket, config)
---   socket: emu.file "w" socket (opened by autoboot)
+-- Public API: state.beginWatching(stateFile, config)
+--   stateFile: FIFO file handle (io.open("w"))
 --   config: { frame_sampling_rate = N } (default: 1 = every frame)
 
 local state = {}
@@ -26,10 +26,11 @@ local SCHEMA = {
 }
 
 -- Internal state
-local _socket = nil
+local _stateFile = nil
 local _memory = nil
 local _framesElapsed = 0
 local _frameSamplingRate = 1
+local _frameSubscription = nil
 
 -- Read all fields and serialize as raw bytes.
 local function _sampleState()
@@ -69,12 +70,12 @@ local function _onFrame()
     end
 
     local raw = _sampleState()
-    pcall(function() _socket:write(raw .. "\n") end)
+    pcall(function() _stateFile:write(raw .. "\n") end)
 end
 
 -- Public: start watching game state.
-function state.beginWatching(socket, config)
-    _socket = socket
+function state.beginWatching(stateFile, config)
+    _stateFile = stateFile
     _framesElapsed = 0
     _memory = nil
 
@@ -84,7 +85,7 @@ function state.beginWatching(socket, config)
         _frameSamplingRate = 1
     end
 
-    emu.add_machine_frame_notifier(_onFrame)
+    _frameSubscription = emu.add_machine_frame_notifier(_onFrame)
 end
 
 return state

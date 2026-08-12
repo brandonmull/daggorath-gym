@@ -51,6 +51,22 @@ Enabled `with MameOperator() as operator:` but no caller in the project used thi
 
 Hardcoded `"1"` in `_build_mame_cmd()` extracted to a named local `autoboot_delay = 1` with a comment explaining why it must be at least 1 (CoCo input buffer readiness for priming carriage returns).
 
+---
+
+_12 Aug 2026_
+
+### `SocketConfig` → `IpcConfig`
+
+The state channel is no longer a TCP socket — it's a named pipe (FIFO). `SocketConfig` renamed to `IpcConfig` to reflect the hybrid architecture. `state_port` and `listen_host` fields dropped; replaced by `state_fifo_path` and `command_host`/`command_port`.
+
+### `-autoboot_script` → `-plugin`
+
+MAME launched with `-plugin` instead of `-autoboot_script`. The plugin path points to `emulation/plugins/daggorath/`. `-autoboot_delay` removed — the plugin's `startplugin()` entry point fires when the machine initializes, and the keyboard priming delay is handled by the 300-frame auto-prime in `commands.lua`.
+
+### State channel: TCP socket → FIFO
+
+`recv()` now reads from a FIFO via `os.read()` instead of a TCP socket `recv()`. `start()` creates the FIFO with `os.mkfifo()` and opens it `O_RDWR` before launching MAME. `stop()` removes the stale FIFO on cleanup. The command channel (`send()`) remains a TCP socket — `emu.file("r")` is documented stable and provides the non-blocking reads that FIFOs can't do.
+
 ### Formatting improvements
 
 - Compacted statements expanded (tuple unpack + method call split across lines)

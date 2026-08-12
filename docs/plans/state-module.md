@@ -16,49 +16,52 @@ This document addresses four design questions:
 **Startup:**
 
 ```
-  environment starts bridge
+  environment starts emulator
     │
-    ├─ bridge opens state socket as server (15000)
+    ├─ emulator creates state FIFO (/tmp/daggorath-state)
     │
-    └─ bridge launches MAME as subprocess
+    └─ emulator launches MAME as subprocess
         │
         └─ MAME runs autoboot
             │
-            └─ autoboot connects to state socket as write-only client
+            └─ autoboot hands off to state.lua
+                │
+                └─ state.lua opens state FIFO for writing (io.open("w"))
 ```
 
-**Runtime** (state flow — Lua sends, Python receives):
+**Runtime** (state flow — Lua writes, Python reads):
 
 ```
 ┌─ Lua ────────────────────────────────────────────┐
-│  autoboot.lua   opens the write socket            │
-│  state.lua      samples game state each frame     │
+│  state.lua      opens the state FIFO for writing  │
+│                 samples game state each frame     │
 │                 reads known RAM addresses         │
-│                 writes raw bytes to socket        │
+│                 writes raw bytes to FIFO          │
 └──────────────────────┬────────────────────────────┘
                        │ raw bytes
                        ▼
-                ┌── port 15000 ──┐
-                │ TCP (emu.file)  │
-                └────────┬────────┘
+                ┌── state FIFO ──┐
+                │ named pipe     │
+                │ io.open("w")   │
+                └────────┬───────┘
                          │ raw bytes
                          ▼
 ┌─ Python ─────────────────────────────────────────┐
-│  bridge.py      receives bytes from socket        │
-│  state.py       deserializes into DaggorathState  │
-│  env.py         converts to array for RL agent    │
+│  emulator.py   reads bytes from FIFO              │
+│  state.py      deserializes into DaggorathState   │
+│  env.py        converts to array for RL agent     │
 └───────────────────────────────────────────────────┘
 
   Legend:
-    ┌───┐  = file or module    ──→ = data flow    port = TCP socket
+    ┌───┐  = file or module    ──→ = data flow    FIFO = named pipe
 ```
 
 ## Data Flow
 
 ```
-autoboot.lua                  state.lua                        port 15000          bridge.py / env.py
-─────────────                 ─────────                        ──────────          ─────────────────
-opens write socket ──────→   begins watching
+autoboot.lua                  state.lua                        state FIFO          emulator.py / env.py
+─────────────                 ─────────                        ──────────          ────────────────────
+hands off to state.lua ──→   begins watching
                               │
                               ├─ acquires CPU memory space (lazy)
                               ├─ registers per-frame callback
@@ -70,7 +73,7 @@ opens write socket ──────→   begins watching
                                 │    ├─ reads u8 or u16 value    ←──  6809 RAM
                                 │    └─ builds byte string
                                 │
-                                └─ writes bytes to socket ────────→  raw bytes  →  deserializes to DaggorathState
+                                └─ writes bytes to FIFO ──────────→  raw bytes  →  deserializes to DaggorathState
                                                                                    │
                                                                                    ├─ attribute access
                                                                                    ├─ converts to array
@@ -137,7 +140,7 @@ Three competing principles were considered before settling on **hierarchical**:
 
 The Lua module uses `state` rather than a longer name like `gamestate` because the emulation directory provides sufficient context — there's nothing else called "state" in that scope. The Python module uses `DaggorathState` rather than `GameState` because `GameState` is a generic term that could collide with other game state classes in the Python ecosystem. The `Daggorath` prefix makes the class name unique and self-documenting.
 
-The module's public API is a single function: `state.watch(socket, config)`. This mirrors `commands.start(socket)` — both modules follow the same pattern: autoboot opens the socket and hands it off with a one-line call, and the module owns its own frame loop.
+The module's public API is a single function: `state.beginWatching(stateFile, config)`. This mirrors `commands.beginProcessing(commandSocket)` — both modules follow the same pattern: the entry point receives an open I/O handle and owns its own frame loop.
 
 ---
 
@@ -206,24 +209,24 @@ The schema is created once at module import and shared by every `DaggorathState`
 
 Two approaches were considered for integrating the reporting logic with `autoboot.lua`:
 
-- **Option A (chosen):** The module owns the frame loop. `autoboot.lua` opens the socket and calls `state.watch(socket, config)` — one line. The module registers the frame notifier, acquires the CPU memory space, reads RAM addresses, serializes bytes, and writes to the socket. `autoboot.lua` doesn't know about any of this.
+- **Option A (chosen):** The module owns the frame loop. `autoboot.lua` hands the state FIFO file handle to the module via `state.beginWatching(stateFile, config)` — one line. The module registers the frame notifier, acquires the CPU memory space, reads RAM addresses, serializes bytes, and writes to the FIFO. `autoboot.lua` doesn't know about any of this.
 
 - **Option B:** Autoboot drives. The module exposes a pure `sample(memspace)` function. Autoboot registers the frame callback, calls `sample()`, and writes to the socket.
 
-We chose **A** because `autoboot.lua` stays minimal — just a socket open and a single module call — while the module encapsulates concerns autoboot doesn't need to know about. Testing must be end-to-end regardless; there's no `manager.machine` or `memspace:read_u8()` outside a running MAME instance. This also parallels the commands module design (same pattern, opposite direction).
+We chose **A** because `autoboot.lua` stays minimal — it hands the state FIFO path to the module with a single call — while the module encapsulates concerns autoboot doesn't need to know about. Testing must be end-to-end regardless; there's no `manager.machine` or `memspace:read_u8()` outside a running MAME instance. This also parallels the commands module design (same pattern, opposite direction).
 
-After the change, `autoboot.lua` opens a write socket and hands it off with a single call — `state.watch(socket, { frame_sampling_rate = 1 })`. Everything else — memory space, RAM addresses, serialization, frame counting, error handling — is inside the module.
+After the change, `autoboot.lua` passes the state FIFO path to the module with a single call — `state.beginWatching(stateFile, { frame_sampling_rate = 1 })`. Everything else — memory space, RAM addresses, serialization, frame counting, error handling — is inside the module.
 
 ### Internal Mechanics
 
-The public API is `state.watch(socket, config)` where `config` is `{ frame_sampling_rate = N }` (default: 1, meaning every frame). Internally the module tracks four state variables:
+The public API is `state.beginWatching(stateFile, config)` where `config` is `{ frame_sampling_rate = N }` (default: 1, meaning every frame). Internally the module tracks four state variables:
 
 | Variable | Purpose |
 |----------|---------|
-| `_socket` | The `emu.file("w")` socket |
-| `_memspace` | CPU program space, lazy-initialized on first frame |
-| `_frames_elapsed` | Counter since `watch()` was called |
-| `_frame_sampling_rate` | From config |
+| `_stateFile` | The FIFO file handle opened with `io.open("w")` |
+| `_memory` | CPU program space, lazy-initialized on first frame |
+| `_framesElapsed` | Counter since `beginWatching()` was called |
+| `_frameSamplingRate` | From config |
 
 Two internal functions do the work:
 
@@ -234,14 +237,14 @@ _sample()
     → concatenates all values into a raw byte string using string.char()
 
 _on_frame()
-    → increments _frames_elapsed
-    → lazy-initializes _memspace on first sampled frame
-    → skips if _frames_elapsed is not a multiple of _frame_sampling_rate
+    → increments _framesElapsed
+    → lazy-initializes _memory on first sampled frame
+    → skips if _framesElapsed is not a multiple of _frameSamplingRate
     → reads all 12 RAM addresses and builds a 15-byte raw frame
-    → writes the bytes plus a trailing newline to _socket (via pcall)
+    → writes the bytes plus a trailing newline to _stateFile (via pcall)
 ```
 
-The `pcall()` wrapper is required — if Python hasn't connected yet, writing to the socket would crash MAME. `pcall` catches the error silently.
+The `pcall()` wrapper is required — if Python hasn't opened the FIFO yet, writing to it would crash MAME. `pcall` catches the error silently.
 
 ---
 
@@ -261,9 +264,9 @@ For requirement 2, we override `__setattr__` to raise `AttributeError` on any at
 
 Requirement 3 is satisfied because `__init__` sets each attribute explicitly by name from the schema dict (`vals["at_cell_x"]`), which IDEs recognize as typed attributes.
 
-### Bridge Changes
+### Emulator Changes
 
-`bridge.py`'s `recv()` method currently parses JSON. With raw bytes, it buffers incoming data, splits on newline delimiters, and constructs a `DaggorathState` directly from the raw byte frame for each complete line received. The `send()` method writes a single byte (the command index) to the command socket.
+`emulator.py`'s `recv()` method currently parses JSON. With raw bytes, it reads from the state FIFO via `os.read()`, buffers incoming data, splits on newline delimiters, and constructs a `DaggorathState` directly from the raw byte frame for each complete line received. The `send()` method writes a single byte (the command index) to the command socket on port 15001.
 
 `to_array()` uses `uint16` — three fields are u16 values that can exceed 255. Clamping to `uint8` loses information. The environment layer can normalize or scale downstream if needed.
 
@@ -275,7 +278,7 @@ The reward function is out of scope for the state and commands modules. It's a d
 
 Testing happens at two levels:
 
-**Integration test** — launches actual MAME. Lives in `tests/test_bridge.py`. Receives raw bytes, constructs `DaggorathState`, asserts field values match known game-startup values.
+**Integration test** — launches actual MAME. Lives in `tests/test_emulator.py`. Receives raw bytes, constructs `DaggorathState`, asserts field values match known game-startup values.
 
 **Unit tests** — lives in `tests/test_state.py` (standalone file, no MAME needed, no unified test file). Tests:
 - Schema has 12 fields, `FRAME_LEN` = 15
@@ -291,13 +294,13 @@ Testing happens at two levels:
 
 ### `state.lua`
 
-`state.watch(socket, config)` is the entry point.
+`state.beginWatching(stateFile, config)` is the entry point.
 
 The schema is a constant named `SCHEMA` — an ordered array of `{ name, addr, width }` tables (12 entries, listed in §1). The byte order is the shared contract with `DaggorathStateSchema.FIELDS` in Python.
 
 ```
-state.watch(socket, config)
-    → stores the write socket
+state.beginWatching(stateFile, config)
+    → stores the state FIFO file handle
     → resets the frame counter
     → sets the sampling rate from config (default: every frame)
     → registers a per-frame notifier
@@ -308,7 +311,7 @@ per-frame notifier:
     → skips if the frame isn't a multiple of the sampling rate
     → reads all 12 RAM addresses as u8 or two-byte u16 little-endian
     → concatenates values into a 15-byte raw frame with string.char()
-    → writes the bytes plus a trailing newline to the socket (via pcall)
+    → writes the bytes plus a trailing newline to the FIFO (via pcall)
 ```
 
 ### `state.py`
@@ -341,7 +344,6 @@ to_array()
 | `docs/references/game/commands.md` | Original game manual + ROM-derived command grammar, object tables, incantation words |
 | `docs/references/game/ram.md` | Memory map — every known RAM address and what it stores |
 | `docs/references/game/code.md` | Full 6809 disassembly of the game |
-| `sandbox/README.md` | How the TCP socket communication works (emu.file, port architecture) |
-| `README.md` | Project overview, milestones, setup instructions |
+| `docs/findings/ipc.md` | IPC transport evaluation — FIFO for state, TCP for commands |
 | `docs/plans/overview.md` | Project context and architecture |
 | `docs/plans/commands-module.md` | Companion plan for the commands module |
