@@ -31,9 +31,9 @@ This document addresses four design questions:
     │
     └─ emulator launches MAME as subprocess
         │
-        └─ MAME runs autoboot
+        └─ MAME runs the plugin
             │
-            └─ autoboot hands off to commands.lua
+            └─ init.lua hands off to commands.lua
                 │
                 └─ commands.lua connects to command socket as read-only client (emu.file("r"))
 ```
@@ -149,7 +149,7 @@ The bot sends full-word command phrases (e.g., "ATTACK LEFT") rather than abbrev
 
 ### The Lua Module's Job
 
-The module receives a 1-byte command index from the command socket (port 15001), looks up the corresponding command phrase, and dispatches it to the game. The module owns its own frame loop; `autoboot.lua` only opens the socket and hands it off.
+The module receives a 1-byte command index from the command socket (port 15001), looks up the corresponding command phrase, and dispatches it to the game. The module owns its own frame loop; `init.lua` only opens the socket and hands it off.
 
 ### Dispatch Mechanism
 
@@ -159,7 +159,7 @@ The typing-timing and command-buffering sandboxes confirmed:
 
 - `natkeyboard:post()` delivers commands intact — no per-character coordination
 - No Lua-side buffering is needed — `natkeyboard` operates below the game's ring buffer
-- `-autoboot_delay 1` and two blank `\r` priming posts are required before the first real command (handled in `autoboot.lua`)
+- Two blank `\r` priming posts are required before the first real command (handled in `commands.lua`)
 
 A command is dispatched on the same frame it arrives — no frame-skipping, throttling, or batching. The sandboxes confirmed that commands can be posted at full frame rate without loss. The natural keyboard interface is acquired once on first use and reused across all subsequent frames.
 

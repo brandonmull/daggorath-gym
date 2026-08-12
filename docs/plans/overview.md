@@ -29,12 +29,12 @@ MAME lets us attach **Lua scripts** that run alongside the emulated machine. The
 │     │  ┌──────────────────────────────┐                      │
 │     │  │      MAME (emulator)         │                      │
 │     │  │  ┌────────────────────────┐  │                      │
-│     │  │  │  Lua scripts            │  │                      │
-│     │  │  │  - autoboot.lua         │  │                      │
-│     │  │  │  - state.lua            │  │                      │
-│     │◄─┼──│    (writes state FIFO)  │  │                      │
-│     │  │  │  - commands.lua         │  │                      │
-│     │  │  │    (reads command TCP)  │  │                      │
+│     │  │  │  Lua plugin (daggorath) │  │                      │
+│     │  │  │  - init.lua (entry)    │  │                      │
+│     │  │  │  - state.lua           │  │                      │
+│     │◄─┼──│    (writes state FIFO) │  │                      │
+│     │  │  │  - commands.lua        │  │                      │
+│     │  │  │    (reads command TCP) │  │                      │
 │     │  │  └────────────────────────┘  │                      │
 │     │  │  ┌────────────────────────┐  │                      │
 │     │  │  │  Emulated CoCo 3        │  │                      │
@@ -45,7 +45,7 @@ MAME lets us attach **Lua scripts** that run alongside the emulated machine. The
 │     │  └──────────────────────────────┘                      │
 └─────┼────────────────────────────────────────────────────────┘
       │ state FIFO (/tmp/daggorath-state)
-      │ raw bytes, every frame
+      │ tagged records on change (S / T / B)
 ```
 
 ## Key Design Choices
@@ -53,7 +53,8 @@ MAME lets us attach **Lua scripts** that run alongside the emulated machine. The
 - **Hybrid IPC** — a named pipe (FIFO) for game state (MAME → Python, high-throughput write-only) and a TCP socket on port 15001 for commands (Python → MAME, low-throughput read-only). The state channel uses standard Lua `io.open("w")` to bypass `emu.file`'s fragility under sustained write load; the command channel stays on `emu.file("r")` which is documented as stable and provides the non-blocking reads that FIFOs can't do. See `docs/findings/ipc.md` for the evaluation of alternatives.
 - **No external Lua dependencies** — MAME ships its own embedded Lua interpreter. LuaRocks packages cannot be loaded. All Lua scripts use only MAME's built-in APIs and the standard Lua `io` library.
 - **Raw byte wire format** — no JSON on either channel. Compact, fast, and avoids serialization overhead on the emulated CPU.
-- **Flyweight pattern** — shared schema objects on both sides, per-frame/per-command value objects. Schema defines the contract once; instances are light.
+- **Change detection, not frame-by-frame** — the state channel emits a record only when something meaningful changes (numeric state or command-area text), not every frame. Identical frames are dropped in Lua against a snapshot.
+- **Flyweight pattern** — shared schema objects on both sides, per-change value objects. Schema defines the contract once; instances are light.
 
 ## Naming Conventions
 
@@ -92,6 +93,7 @@ The project uses a three-phase documentation pipeline:
 |----------|-----------------|
 | `docs/plans/state-module.md` | Game state reporting module plan |
 | `docs/plans/commands-module.md` | Command dispatch module plan |
+| `docs/plans/screen-module.md` | Screen reading module plan — capture and decode of command-area text |
 | `docs/reviews/environment.py.md` | environment.py design review (observations, deferred items) |
 | `docs/reviews/emulator.py.md` | emulator.py design review (observations, deferred items) |
 | `docs/reviews/state.py.md` | state.py design review (observations, deferred items) |
