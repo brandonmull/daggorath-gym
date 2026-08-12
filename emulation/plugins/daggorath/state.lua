@@ -1,12 +1,29 @@
 -- State reporting module for Dungeons of Daggorath.
--- Captures 12 game state fields from RAM each frame, serializes as raw bytes,
--- and writes them to the state FIFO.
+-- Captures numeric game state and command-area pixels from RAM each frame,
+-- dedups each against a snapshot, and writes tagged records to the state FIFO.
 --
 -- Public API: state.beginWatching(stateFile, config)
 --   stateFile: FIFO file handle (io.open("w"))
 --   config: { frame_sampling_rate = N } (default: 1 = every frame)
+--
+-- Wire format (fixed-size, no delimiter — the pixel payload is binary):
+--   "S" + 14-byte frame                              state only changed
+--   "T" + 1-byte comColor + 1024 pixel bytes         text only changed
+--   "B" + 14-byte frame + 1-byte comColor + 1024 px  both changed
 
 local state = {}
+
+local CHARS_PER_ROW = 32
+local SCANLINES_PER_ROW = 8
+local TEXT_ROWS = 4
+local TOTAL_SCANLINES = TEXT_ROWS * SCANLINES_PER_ROW
+
+local COM_START_HI = 0x0390
+local COM_START_LO = 0x0391
+local COM_COLOR = 0x0396
+local DISPLAY_FN_HI = 0x02B2
+local DISPLAY_FN_LO = 0x02B3
+local DISPLAY_LIVE = 0xCE66
 
 -- Schema: ordered array of { name, addr, width } tables.
 -- The byte order is the shared contract with DaggorathStateSchema.FIELDS in Python.
@@ -20,7 +37,6 @@ local SCHEMA = {
     { name = "playerWeight",         addr = 0x0215, width = 2 },
     { name = "playerStrength",       addr = 0x0217, width = 2 },
     { name = "heartBeatInterval",    addr = 0x02AF, width = 1 },
-    { name = "heartBeatCountdown",   addr = 0x02AE, width = 1 },
     { name = "playerFainting",       addr = 0x0228, width = 1 },
     { name = "evilWizardDead",       addr = 0x022B, width = 1 },
 }
@@ -30,9 +46,12 @@ local _stateFile = nil
 local _memory = nil
 local _framesElapsed = 0
 local _frameSamplingRate = 1
+local _stateSnapshot = nil
+local _pixelSnapshot = nil
+local _comColorSnapshot = nil
 local _frameSubscription = nil
 
--- Read all fields and serialize as raw bytes.
+-- Read all fields and serialize as a 14-byte string.
 local function _sampleState()
     local raw = {}
     for _, field in ipairs(SCHEMA) do
@@ -49,7 +68,45 @@ local function _sampleState()
     return table.concat(raw)
 end
 
--- Per-frame notifier: sample and write if this is a sampled frame.
+-- Read the command-area pixel block as a flat 1024-byte string.
+local function _readCommandAreaPixels()
+    local areaStart = _memory:read_u8(COM_START_HI) * 256
+        + _memory:read_u8(COM_START_LO)
+
+    local pixels = {}
+    for scanline = 0, TOTAL_SCANLINES - 1 do
+        local scanlineStart = areaStart + scanline * CHARS_PER_ROW
+        for column = 0, CHARS_PER_ROW - 1 do
+            pixels[#pixels + 1] = string.char(
+                _memory:read_u8(scanlineStart + column))
+        end
+    end
+    return table.concat(pixels)
+end
+
+-- Write one tagged record to the FIFO in a single call.
+local function _writeRecord(kind, frame, comColor, pixels)
+    local pieces = { kind }
+    if frame then
+        pieces[#pieces + 1] = frame
+    end
+    if comColor then
+        pieces[#pieces + 1] = string.char(comColor)
+    end
+    if pixels then
+        pieces[#pieces + 1] = pixels
+    end
+
+    local ok = pcall(function()
+        _stateFile:write(table.concat(pieces))
+        _stateFile:flush()
+    end)
+    if not ok then
+        print("[state] Failed to write record " .. kind)
+    end
+end
+
+-- Per-frame notifier: sample, dedup, and write tagged records.
 local function _onFrame()
     _framesElapsed = _framesElapsed + 1
 
@@ -69,8 +126,39 @@ local function _onFrame()
         return
     end
 
-    local raw = _sampleState()
-    pcall(function() _stateFile:write(raw .. "\n") end)
+    local frame = _sampleState()
+    local stateChanged = (_stateSnapshot == nil) or (frame ~= _stateSnapshot)
+
+    -- The command area is only meaningful once the normal screen is live.
+    local displayFn = _memory:read_u8(DISPLAY_FN_HI) * 256
+        + _memory:read_u8(DISPLAY_FN_LO)
+    local isLive = (displayFn == DISPLAY_LIVE)
+
+    local pixels = nil
+    local comColor = nil
+    local pixelChanged = false
+    if isLive then
+        pixels = _readCommandAreaPixels()
+        comColor = _memory:read_u8(COM_COLOR)
+        pixelChanged = (_pixelSnapshot == nil)
+            or (pixels ~= _pixelSnapshot)
+            or (comColor ~= _comColorSnapshot)
+    end
+
+    if stateChanged and pixelChanged then
+        _writeRecord("B", frame, comColor, pixels)
+        _stateSnapshot = frame
+        _pixelSnapshot = pixels
+        _comColorSnapshot = comColor
+    elseif stateChanged then
+        _writeRecord("S", frame, nil, nil)
+        _stateSnapshot = frame
+    elseif pixelChanged then
+        _writeRecord("T", nil, comColor, pixels)
+        _pixelSnapshot = pixels
+        _comColorSnapshot = comColor
+    end
+    -- else: nothing changed — write no record
 end
 
 -- Public: start watching game state.
@@ -78,6 +166,9 @@ function state.beginWatching(stateFile, config)
     _stateFile = stateFile
     _framesElapsed = 0
     _memory = nil
+    _stateSnapshot = nil
+    _pixelSnapshot = nil
+    _comColorSnapshot = nil
 
     if config and config.frame_sampling_rate then
         _frameSamplingRate = config.frame_sampling_rate

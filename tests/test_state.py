@@ -5,15 +5,6 @@ counts or byte positions. The schema (FIELDS) is the single source of
 truth. When fields are added, removed, or reordered, the schema changes
 and the tests adapt — they only fail if the schema is internally
 inconsistent.
-
-Growth plan:
-    - As new RAM addresses are discovered in the disassembly, add fields
-      to FIELDS. The round-trip and consistency tests will validate them
-      without any test changes.
-    - When per-field bounds (min/max) are known, add them to the schema
-      and test that round-trip values stay within those bounds.
-    - The to_array test ensures the RL agent's observation interface
-      stays synchronized with whatever shape FIELDS defines.
 """
 
 import numpy as np
@@ -75,11 +66,45 @@ def test_rejects_wrong_length():
         DaggorathState(bytes(FRAME_LEN + 1))
 
 
-def test_strips_single_trailing_newline():
-    """A frame ending with a single newline is accepted (newline-delimited wire format)."""
-    data = _build_test_frame() + b"\n"
-    state = DaggorathState(data)
-    assert state.game_mode == 0  # first field gets index 0
+# ---- derived attributes ----------------------------------------------------
+
+def test_heart_rate():
+    """heart_rate is 60 / heart_beat_interval, and 0 when the interval is zero."""
+    frame = bytearray(FRAME_LEN)
+
+    # interval = 20 → 60 / 20 = 3.0 beats/sec
+    for name, offset, width in FIELDS:
+        frame[offset] = 0
+    interval_offset = dict((n, o) for n, o, _ in FIELDS)["heart_beat_interval"]
+    frame[interval_offset] = 20
+    state = DaggorathState(bytes(frame))
+    assert state.heart_rate == 3.0
+
+    # interval = 0 → no active heart
+    frame[interval_offset] = 0
+    state = DaggorathState(bytes(frame))
+    assert state.heart_rate == 0.0
+
+
+def test_command_text_defaults_to_empty():
+    """command_text defaults to an empty string when not provided."""
+    state = DaggorathState(_build_test_frame())
+    assert state.command_text == ""
+
+
+def test_command_text_is_stored():
+    """command_text carries the decoded command-area text when provided."""
+    state = DaggorathState(_build_test_frame(), command_text="PULL LEFT TORCH")
+    assert state.command_text == "PULL LEFT TORCH"
+
+
+# ---- immutability ----------------------------------------------------------
+
+def test_immutability():
+    """DaggorathState rejects attribute assignment after construction."""
+    state = DaggorathState(_build_test_frame())
+    with pytest.raises(AttributeError):
+        state.game_mode = 0
 
 
 # ---- agent interface -------------------------------------------------------

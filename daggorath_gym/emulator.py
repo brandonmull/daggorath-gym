@@ -5,6 +5,12 @@ a simple start/stop/recv/send API.
 
     State channel:   named pipe (FIFO) — MAME writes, Python reads
     Command channel: TCP socket         — Python writes, MAME reads
+
+The state channel carries fixed-size tagged records (no delimiter):
+
+    S  + 14-byte frame                                 state only changed
+    T  + 1-byte comColor + 1024 pixel bytes            text only changed
+    B  + 14-byte frame + 1-byte comColor + 1024 px     both changed
 """
 
 import os
@@ -16,7 +22,16 @@ from typing import Optional
 
 from . import commands
 from .paths import PROJECT_PATH, EMULATION_PATH
-from .state import DaggorathState
+from .screen import PIXEL_BYTES, decode_command_area
+from .state import FRAME_LEN, DaggorathState
+
+
+# Record sizes keyed by the one-byte tag (fixed-size framing, binary-safe).
+_RECORD_LENGTHS = {
+    b"S": 1 + FRAME_LEN,
+    b"T": 1 + 1 + PIXEL_BYTES,
+    b"B": 1 + FRAME_LEN + 1 + PIXEL_BYTES,
+}
 
 
 # ---------- Configuration ----------
@@ -63,8 +78,10 @@ class MameOperator:
         self._command_socket: Optional[socket.socket] = None
         self._command_connection: Optional[socket.socket] = None
 
-        # ---------- receive buffer ----------
+        # ---------- receive buffer + reconstruction ----------
         self._receive_buffer = b""
+        self._last_frame: Optional[bytes] = None
+        self._last_command_text = ""
 
     # ---------- lifecycle ----------
 
@@ -133,20 +150,28 @@ class MameOperator:
         self._state_fd = None
         self._mame_process = None
         self._receive_buffer = b""
+        self._last_frame = None
+        self._last_command_text = ""
 
     # ---------- communication ----------
 
     def recv(self) -> DaggorathState:
-        """Block until the next raw byte state frame arrives from MAME."""
+        """Block until the next tagged record arrives, returning current state.
 
+        The returned DaggorathState always carries the latest known numeric
+        state and the latest known command text. Records omit the unchanged
+        half, so this method reconstructs from the last-known values.
+        """
         while True:
-            if b"\n" in self._receive_buffer:
-                line, self._receive_buffer = self._receive_buffer.split(b"\n", 1)
-                return DaggorathState(line)
-
             if self._state_fd is None:
                 raise ConnectionError("Operator not started or already stopped")
 
+            # ---------- parse a complete record when buffered ----------
+            record = self._extract_record()
+            if record is not None:
+                return self._parse_record(record)
+
+            # ---------- read more bytes from the FIFO ----------
             try:
                 chunk = os.read(self._state_fd, 4096)
             except OSError:
@@ -168,6 +193,52 @@ class MameOperator:
             raise ConnectionError(f"Failed to send command: {exc}")
 
     # ---------- internals ----------
+
+    def _extract_record(self) -> Optional[bytes]:
+        """Return a complete record if one is buffered, else None.
+
+        The first byte of the buffer is the record tag; its length is fixed
+        per tag. Consumes the record from the buffer on success.
+        """
+        if not self._receive_buffer:
+            return None
+
+        tag = self._receive_buffer[0:1]
+        length = _RECORD_LENGTHS.get(tag)
+        if length is None:
+            # Unknown tag — drop the byte and keep going.
+            self._receive_buffer = self._receive_buffer[1:]
+            return None
+
+        if len(self._receive_buffer) < length:
+            return None
+
+        record = self._receive_buffer[:length]
+        self._receive_buffer = self._receive_buffer[length:]
+        return record
+
+    def _parse_record(self, record: bytes) -> DaggorathState:
+        """Parse a tagged record into a DaggorathState carrying current text."""
+        tag = record[0:1]
+
+        frame = self._last_frame
+        command_text = self._last_command_text
+
+        if tag in (b"S", b"B"):
+            frame = record[1:1 + FRAME_LEN]
+
+        if tag in (b"T", b"B"):
+            offset = 1 + (FRAME_LEN if tag == b"B" else 0)
+            com_color = record[offset]
+            pixels = record[offset + 1:offset + 1 + PIXEL_BYTES]
+            command_text = decode_command_area(pixels, com_color)
+
+        if frame is None:
+            raise ConnectionError("Received a record before any numeric state")
+
+        self._last_frame = frame
+        self._last_command_text = command_text
+        return DaggorathState(frame, command_text=command_text)
 
     def _remove_stale_fifo(self) -> None:
         """Remove a stale FIFO file if it exists."""

@@ -34,7 +34,6 @@ function exports.startplugin()
         print("[daggorath] ERROR: Could not open state FIFO: " .. stateFifoPath)
         return
     end
-    stateFile:setvbuf("line")
     print("[daggorath] State FIFO opened: " .. stateFifoPath)
 
     -- Open the command socket for reading

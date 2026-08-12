@@ -13,7 +13,7 @@ class DaggorathEnv(gym.Env):
     """A Gymnasium environment that wraps Dungeons of Daggorath via MAME.
 
     Action space: Discrete(154) — one index per valid command phrase.
-    Observation space: Box(12, uint16) — raw game state fields from RAM.
+    Observation space: Box(11, uint16) — raw game state fields from RAM.
     Lifecycle: owns a MameOperator; creates it on reset(), stops on close().
     Status: reward and termination raise NotImplementedError (awaiting design).
     """
@@ -27,7 +27,7 @@ class DaggorathEnv(gym.Env):
         # Action space: 154 discrete game commands
         self.action_space = spaces.Discrete(NUM_COMMANDS)
 
-        # Observation space: 12 state fields as uint16
+        # Observation space: numeric state fields as uint16
         self.observation_space = spaces.Box(
             low=0, high=65535, shape=(NUM_FIELDS,), dtype=np.uint16
         )
