@@ -1,8 +1,8 @@
-# env.py — Implemented Decisions
+# environment.py — Implemented Decisions
 
 _8 Aug 2026_
 
-This records the concrete code changes applied to `daggorath_gym/env.py` during the post-build review. For the full analysis, see `docs/reviews/env.md`.
+This records the concrete code changes applied to `daggorath_gym/environment.py` during the post-build review. For the full analysis, see `docs/reviews/environment.py.md`.
 
 ## Applied Changes
 
@@ -20,7 +20,7 @@ Previously `truncated = False` was set inline in `step()` with no dedicated meth
 
 ### Docstring — class-specific
 
-Module docstring stays broad ("Gymnasium environment for Dungeons of Daggorath"). Class docstring now describes spaces (Discrete(154), Box(12, uint16)), lifecycle (owns MameOperator), and current status (reward/termination raise NotImplementedError). No duplication.
+Module docstring stays broad ("Gymnasium environment for Dungeons of Daggorath"). Class docstring now describes spaces (Discrete(154), Box(11, uint16)), lifecycle (owns MameOperator), and current status (reward/termination raise NotImplementedError). No duplication.
 
 ### `@staticmethod` removed
 

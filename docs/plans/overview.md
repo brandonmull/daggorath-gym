@@ -14,7 +14,7 @@ MAME lets us attach **Lua scripts** that run alongside the emulated machine. The
 ┌─────────────────────────────────────────────────────────────┐
 │                      Python (our code)                      │
 │  ┌──────────────┐   ┌──────────────┐   ┌────────────────┐  │
-│  │ emulator.py  │   │  state.py    │   │     env.py     │  │
+│  │ emulator.py  │   │  state.py    │   │ environment.py │  │
 │  │ IPC bridge   │   │ deserialize  │   │ Gymnasium Env  │  │
 │  │              │   │ game state   │   │ step()/reset() │  │
 │  └──┬───────┬───┘   └──────▲───────┘   └────────────────┘  │
@@ -98,14 +98,19 @@ The project uses a three-phase documentation pipeline:
 | `docs/reviews/emulator.py.md` | emulator.py design review (observations, deferred items) |
 | `docs/reviews/state.py.md` | state.py design review (observations, deferred items) |
 | `docs/reviews/commands.py.md` | commands.py design review (observations, deferred items) |
-| `docs/reviews/autoboot.lua.md` | autoboot.lua design review (observations, deferred items) |
 | `docs/reviews/state.lua.md` | state.lua design review (observations, deferred items) |
 | `docs/reviews/commands.lua.md` | commands.lua design review (observations, deferred items) |
 | `docs/decisions/environment.py.md` | environment.py implemented decisions |
 | `docs/decisions/emulator.py.md` | emulator.py implemented decisions |
-| `docs/decisions/autoboot.lua.md` | autoboot.lua implemented decisions |
 | `docs/decisions/state.lua.md` | state.lua implemented decisions |
 | `docs/decisions/commands.lua.md` | commands.lua implemented decisions |
+| `docs/decisions/plugin-conversion.md` | MAME plugin conversion |
+| `docs/decisions/ipc-hybrid.md` | Hybrid IPC — FIFO state channel + TCP command channel |
+| `docs/decisions/gc-autounsubscribe.md` | Saving notifier subscriptions to prevent GC auto-unsubscribe |
+| `docs/decisions/readiness-gating.md` | Gating RAM reads on `displayFunction == 0xCE66` before sampling |
+| `docs/findings/ipc.md` | IPC transport evaluation — FIFO vs TCP vs Unix sockets |
+| `docs/findings/ram-signals.md` | RAM signal catalog — readiness and command-acceptance signals |
+| `docs/findings/memory-reads.md` | Safe RAM reads + segfault debugging in MAME Lua |
 | `docs/references/game/commands.md` | Original game manual + ROM-derived command grammar, object tables, incantation words |
 | `docs/references/game/ram.md` | Memory map — every known RAM address and what it stores |
 | `docs/references/game/code.md` | Full 6809 disassembly of the game |

@@ -9,7 +9,7 @@ Frame notifiers, reset notifiers, and stop notifiers all died after the first
 machine reset, including the demo→live transition in Daggorath.
 
 This affected:
-- Production `state.lua` and `commands.lua` (autoboot scripts)
+- Production `state.lua` and `commands.lua` (plugin modules)
 - All sandbox experiments (command-readiness, plugin-lifecycle)
 - Every attempt to use `emu.add_machine_frame_notifier`
 

@@ -4,11 +4,11 @@ A Gymnasium environment for training an RL agent to play **Dungeons of Daggorath
 
 ## Installation
 
-1. Run the setup script to install MAME, ROMs, and configure hash files:
-   ```
-   bash setup.sh
-   ```
-2. Install the Python package:
+1. Install MAME 0.289 — built from source under WSL and installed to `/usr/local` (see `docs/references/mame/setup.md`).
+2. Put the ROMs and hash files in place:
+   - `emulation/roms/` — `coco3.zip`, `daggorath.zip`
+   - `emulation/hash/` — `coco_cart.xml` (Shield Fix)
+3. Install the Python package:
    ```
    source .venv/bin/activate
    pip install -e .
@@ -22,57 +22,62 @@ Usage tips:
 
 | # | Severity | Issue |
 |---|---|---|
-| 1 | P1 | Readiness detection not yet implemented — reset() returns first frame (see `docs/reviews/env.md`) |
-| 2 | P1 | No gym environment registration: `gymnasium.make('Daggorath-v0')` won't resolve |
-| 3 | P2 | commands.lua action dispatch from Python not yet wired |
+| 1 | P1 | `step()` is unusable — reward and termination/truncation raise `NotImplementedError` (no reward or termination plan yet) |
+| 2 | P2 | No gym environment registration: `gymnasium.make('Daggorath-v0')` won't resolve |
+| 3 | P2 | `setup.sh` is stale — installs MAME via apt paths; the project now builds from source into `/usr/local` |
 | 4 | P2 | WSLg audio has intermittent jitter on synthesized sounds (use `-sound sdl` + update SDL2) |
+| 5 | P3 | `reset(seed=...)` ignores the seed (no RNG wired yet) |
 
 ## Milestones
 
-1. ✅ **Functional gym environment** — MAME boots the game, Lua reports state
-2. 🔜 **Working socket communication** — Python ↔ Lua TCP bridge operational
-3. **Future** — Train an RL agent
+1. ✅ **Functional gym environment** — MAME boots the game, `reset()` returns a live observation (readiness-gated)
+2. ✅ **Hybrid IPC** — state FIFO + command socket between Python and the Lua plugin
+3. 🔜 **Trainable step loop** — reward + termination so `step()` returns meaningful values
+4. **Future** — Train an RL agent
 
 ## Architecture
 
 ```
-Python Gym Env (daggorath_gym/env.py)
-    ↕ TCP sockets (127.0.0.1:15000 state, 15001 commands)
-MAME emulator (coco3 driver)
+Python Gym Env (daggorath_gym/environment.py)
+    ↕  state: named pipe FIFO (MAME → Python, tagged S/T/B records)
+    ↕  command: TCP socket (Python → MAME, 1-byte command indices)
+MAME emulator (coco3 driver) — "daggorath" Lua plugin
+    emulation/plugins/daggorath/init.lua    entry point, opens both channels
+    emulation/plugins/daggorath/state.lua   RAM sampling → FIFO
+    emulation/plugins/daggorath/commands.lua command dispatch via natkeyboard
     ↕
-Lua scripts (emulation/*.lua) running inside MAME's embedded Lua engine
-    ↕
-Daggorath ROM (daggorath.zip — Shield Fix by Aaron Oliver)
-    ↕
-CoCo 3 system ROM (coco3.zip)
+Daggorath ROM (daggorath.zip — Shield Fix) + CoCo 3 ROM (coco3.zip)
 ```
 
 ### Communication Flow
 
-- **Python** starts TCP servers on ports 15000 + 15001, then launches MAME
-- **MAME** boots with `-autoboot_script emulation/autoboot.lua`
-- **autoboot.lua** opens two unidirectional emu.file sockets, registers frame notifier
-- **state.lua** reads RAM state every frame → raw bytes over port 15000
-- **Frame notifier** reads command indices from port 15001 → dispatches to commands.lua
-- **Python** receives game state, sends command indices back
+- **Python** creates the state FIFO and listens on the command socket, then launches MAME with `-plugin daggorath`
+- **init.lua** (plugin entry) opens the FIFO for writing and the command socket for reading, then hands both to the modules
+- **state.lua** samples RAM every frame once the game is in live play, and writes tagged records to the FIFO
+- **commands.lua** reads 1-byte command indices from the socket and posts the matching phrase via natkeyboard
+- **Python** `recv()`s state records and `send()`s command indices
 
 ### Layout
 
-| File | Role |
+| Path | Role |
 |------|------|
 | `daggorath_gym/environment.py` | DaggorathEnv (Gymnasium) |
-| `daggorath_gym/emulator.py` | MameOperator — TCP servers + MAME lifecycle |
-| `daggorath_gym/state.py` | Game state deserialization |
+| `daggorath_gym/emulator.py` | MameOperator — MAME lifecycle + hybrid IPC |
+| `daggorath_gym/state.py` | State schema + deserialization |
 | `daggorath_gym/commands.py` | Command phrase enumeration |
+| `daggorath_gym/screen.py` | Command-area pixel decoding |
 | `daggorath_gym/paths.py` | Project path resolution |
-| `emulation/autoboot.lua` | Entry point — emu.file sockets, frame notifier |
-| `emulation/state.lua` | RAM reader → raw bytes over TCP |
-| `emulation/commands.lua` | Command phrase dispatch via natkeyboard |
-| `emulation/paths.lua` | Socket config (host, ports) |
+| `emulation/plugins/daggorath/init.lua` | Plugin entry — opens FIFO + command socket |
+| `emulation/plugins/daggorath/state.lua` | RAM sampling → FIFO (readiness-gated) |
+| `emulation/plugins/daggorath/commands.lua` | Command dispatch via natkeyboard |
+| `emulation/plugins/daggorath/plugin.json` | Plugin manifest |
 | `emulation/roms/` | coco3.zip, daggorath.zip |
+| `emulation/hash/` | MAME hash files (Shield Fix) |
+| `tests/` | Pytest suite (unit + integration) |
+| `docs/plans/`, `docs/reviews/`, `docs/decisions/`, `docs/findings/` | Design, review, decision, and findings docs |
 | `docs/references/` | 6809 disassembly, RAM map, command grammar, hardware ref |
-| `sandbox/` | Validated TCP sandbox (see its README) |
-| `setup.sh` | One-shot MAME + ROM + Lua installer |
+| `sandbox/` | Validated experiments (see its README) |
+| `setup.sh` | One-shot installer (stale — see Known Issues) |
 | `pyproject.toml` | Pip package config |
 
 ## Coding Conventions
@@ -93,9 +98,18 @@ CoCo 3 system ROM (coco3.zip)
 
 **Naming conventions span both sides of the wire.** Lua and Python constants that represent the same concept must use the same name, differing only in Python's `_` prefix (Lua uses `local` for privacy).
 
-**`emulation/observer.lua` is legacy.** `state.lua` is its replacement. `observer.lua` must not exist.
-
 ## Reference Documentation
+
+Project docs follow a four-phase pipeline:
+
+| Phase | Directory | Description |
+|-------|-----------|-------------|
+| **Plans** | `docs/plans/` | Pre-build design specifications |
+| **Reviews** | `docs/reviews/` | Post-build critique — observations, deferred items |
+| **Decisions** | `docs/decisions/` | Implemented changes |
+| **Findings** | `docs/findings/` | Hard-won discoveries (IPC transport, RAM signals) |
+
+External source material:
 
 - **Code Disassembly**: [docs/references/game/code.md](docs/references/game/code.md)
 - **RAM Memory Map**: [docs/references/game/ram.md](docs/references/game/ram.md)

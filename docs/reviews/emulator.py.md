@@ -4,6 +4,8 @@ _8 Aug 2026 — Brandon & Cline_
 
 This records observations, concerns, alternatives, and decisions from a line-by-line review of `daggorath_gym/emulator.py` (`MameOperator` class). The file manages the MAME subprocess lifecycle and TCP socket communication between Python and Lua.
 
+_Note: this review predates the plugin conversion and `paths.py` refactor — the two-TCP architecture, `autoboot_script_path`, and `EMULATION_PATH` referenced below are gone. See `docs/decisions/plugin-conversion.md` and `docs/decisions/ipc-hybrid.md`._
+
 ---
 
 ## 1. `config.py` duplication
@@ -100,8 +102,8 @@ This records observations, concerns, alternatives, and decisions from a line-by-
 
 ## Deferred
 
-| Topic | When |
-|-------|------|
-| Parallel accept via `select.select()` | When sequential accept becomes a bottleneck or Lua ordering changes — the `_wait_for_connections` signature already supports it |
-| Print logging control | When headless training makes prints noisy — currently dev scaffolding |
-| MAME configuration flow from env to operator | See review-env.md #9 — open question about `__init__` vs `reset(options=...)` |
+| Topic | Status |
+|-------|--------|
+| Parallel accept via `select.select()` | Obsolete — the two-TCP architecture is gone; there is one command socket + a FIFO, so no second socket to accept |
+| Print logging control | Open — when headless training makes prints noisy |
+| MAME configuration flow from env to operator | Resolved — `DaggorathEnv.__init__(mame_config, ipc_config)` |

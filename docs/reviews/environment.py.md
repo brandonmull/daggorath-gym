@@ -1,23 +1,23 @@
-# env.py — Design Review
+# environment.py — Design Review
 
 _8 Aug 2026 — Brandon & Cline_
 
-This records observations, concerns, alternatives, and decisions from a line-by-line review of `daggorath_gym/env.py`. The file is the Gymnasium environment wrapper; it bridges the MAME bridge layer to stable-baselines3.
+This records observations, concerns, alternatives, and decisions from a line-by-line review of `daggorath_gym/environment.py`. The file is the Gymnasium environment wrapper; it bridges the MAME bridge layer to stable-baselines3.
 
 ---
 
 ## 1. `NUM_COMMANDS` and `NUM_FIELDS` imports
 
-**Observation:** `env.py` reaches into `commands.py` and `state.py` to import bare integer constants — `NUM_COMMANDS` (154) and `NUM_FIELDS` (12). These are used only to construct the gym action/observation spaces.
+**Observation:** `environment.py` reaches into `commands.py` and `state.py` to import bare integer constants — `NUM_COMMANDS` (154) and `NUM_FIELDS` (11). These are used only to construct the gym action/observation spaces.
 
-**Concern:** The names read like C macros, not Python identifiers. More importantly, the pattern of importing a derived count from a sibling module feels inverted — `env.py` is the consumer and shouldn't need to know about internal module bookkeeping. The count is derivable from the data the module already exposes (`len(_COMMAND_PHRASES)`, `len(FIELDS)`), so the import is redundant at best and a sync hazard at worst (if someone adds a field and forgets to update the count constant).
+**Concern:** The names read like C macros, not Python identifiers. More importantly, the pattern of importing a derived count from a sibling module feels inverted — `environment.py` is the consumer and shouldn't need to know about internal module bookkeeping. The count is derivable from the data the module already exposes (`len(_COMMAND_PHRASES)`, `len(FIELDS)`), so the import is redundant at best and a sync hazard at worst (if someone adds a field and forgets to update the count constant).
 
 **Alternatives considered:**
 
 - **Keep counts but rename.** Changes the symptom, not the structure.
-- **`len(_COMMAND_PHRASES)` / `len(FIELDS)` inline.** Simplest fix — removes the constant import entirely. But still leaves `env.py` constructing gym spaces from what are essentially implementation details of sibling modules.
+- **`len(_COMMAND_PHRASES)` / `len(FIELDS)` inline.** Simplest fix — removes the constant import entirely. But still leaves `environment.py` constructing gym spaces from what are essentially implementation details of sibling modules.
 - **Delegate space construction to the modules.** `commands.action_space()` returns `spaces.Discrete(154)`, `state.observation_space()` returns a `Box` or `Dict`. The modules own the data, so they own the shape. But this pulls gymnasium into modules that currently describe only game concepts — a coupling that may not be desirable.
-- **Let `env.py` construct spaces from the module's public data.** The pragmatic middle: `env.py` reads the module's data structures and builds spaces from them. No new abstractions, no cross-contamination.
+- **Let `environment.py` construct spaces from the module's public data.** The pragmatic middle: `environment.py` reads the module's data structures and builds spaces from them. No new abstractions, no cross-contamination.
 
 **Decision:** Deferred to a focused gym space architecture design session. That session will pull gymnasium documentation for `Box`, `Discrete`, `Dict`, and `Tuple` spaces and choose the right shape for each. Until then, the current imports remain.
 
@@ -27,13 +27,13 @@ This records observations, concerns, alternatives, and decisions from a line-by-
 
 ## 2. `observation_space` static bounds
 
-**Observation:** `spaces.Box(low=0, high=65535, shape=(12,), dtype=np.uint16)` assumes every field is a full-range unsigned 16-bit integer. The 12 fields include nine u8 values (natural range 0–255) and three u16 values (`ambient_light`, `player_weight`, `player_strength`), none of which meaningfully approach 65535. `ambient_light` in practice is a small value (the base dungeon illumination level).
+**Observation:** `spaces.Box(low=0, high=65535, shape=(11,), dtype=np.uint16)` assumes every field is a full-range unsigned 16-bit integer. The 11 fields include eight u8 values (natural range 0–255) and three u16 values (`ambient_light`, `player_weight`, `player_strength`), none of which meaningfully approach 65535. `ambient_light` in practice is a small value (the base dungeon illumination level).
 
 **Concern:** Over-reporting the range degrades RL learning — the agent wastes exploration budget on values that can never occur. A field whose true range is 0–255 but whose space advertises 0–65535 means the agent considers 65,280 impossible values as part of its exploration space.
 
 **Alternatives considered:**
 
-- **Per-field bounds.** The schema (`FIELDS`) already tracks width. Adding `low`/`high` per field gives `env.py` precise bounds to construct a `Dict` space or a `Box` with per-dimension `low`/`high` arrays.
+- **Per-field bounds.** The schema (`FIELDS`) already tracks width. Adding `low`/`high` per field gives `environment.py` precise bounds to construct a `Dict` space or a `Box` with per-dimension `low`/`high` arrays.
 - **`Dict` space.** More expressive — each field gets its own `Box` with correct bounds. More complex for the agent to process (SB3 typically flattens dict observations anyway). Worth exploring gymnasium docs before committing.
 
 **Decision:** Deferred to the same gym space architecture design session as #1. The two are tightly coupled — where spaces live and what shape they take are the same question.
@@ -158,11 +158,11 @@ The following were discussed and decided — they are implementation details, no
 
 ## Deferred to later design sessions
 
-| Topic | When |
-|-------|------|
-| Gym space architecture (how env constructs action/observation spaces) | After file reviews complete — dedicated session with gymnasium docs |
-| Command readiness detection | Sandbox experiment — validate RAM signals for "game ready" |
-| Command execution detection | Sandbox experiment — validate input ring buffer for "command consumed" |
-| MAME configuration flow (how bridge kwargs reach `reset()`) | After getting familiar with gymnasium conventions |
-| Reward function design | Separate planning effort (new plan doc) |
-| Termination condition design | Separate planning effort (new plan doc) |
+| Topic | Status |
+|-------|--------|
+| Gym space architecture (how env constructs action/observation spaces) | Open |
+| Command readiness detection | Resolved — `displayFunction == 0xCE66` gate in state.lua (see `docs/decisions/readiness-gating.md`) |
+| Command execution detection | Resolved — `perfectMatch` fingerprint (see `docs/findings/ram-signals.md`) |
+| MAME configuration flow (how bridge kwargs reach `reset()`) | Resolved — `__init__(mame_config, ipc_config)`; seed still unwired |
+| Reward function design | Open — needs a new plan doc |
+| Termination condition design | Open — needs a new plan doc |

@@ -51,7 +51,7 @@ This document addresses four design questions:
 │  emulator.py   reads records from FIFO            │
 │  state.py      deserializes into DaggorathState   │
 │  screen.py     decodes text from pixel bytes      │
-│  env.py        converts to array for RL agent     │
+│  environment.py converts to array for RL agent    │
 └───────────────────────────────────────────────────┘
 
   Legend:
@@ -61,7 +61,7 @@ This document addresses four design questions:
 ## Data Flow
 
 ```
-init.lua                      state.lua                        state FIFO          emulator.py / env.py
+init.lua                      state.lua                        state FIFO          emulator.py / environment.py
 ───────                       ─────────                        ──────────          ────────────────────
 hands off to state.lua ──→   begins watching
                               │

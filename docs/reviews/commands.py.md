@@ -16,7 +16,7 @@ This records observations, concerns, alternatives, and decisions from a line-by-
 
 ## 2. `NUM_COMMANDS` — ugly name, questionable design
 
-**Observation:** `NUM_COMMANDS` is a module-level `UPPER_SNAKE_CASE` constant — reads like a C macro. `env.py` imports it solely to construct the action space. The count is derivable from `len(_COMMAND_PHRASES)`.
+**Observation:** `NUM_COMMANDS` is a module-level `UPPER_SNAKE_CASE` constant — reads like a C macro. `environment.py` imports it solely to construct the action space. The count is derivable from `len(_COMMAND_PHRASES)`.
 
 **Decision:** Deferred — part of the broader gym space architecture design session (see `docs/reviews/environment.py.md` #1).
 

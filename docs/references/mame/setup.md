@@ -6,7 +6,7 @@ Reference docs: [code.md](code.md) · [ram.md](ram.md) · [hardware.md](hardware
 
 ## What We Need
 
-These are the Lua modules required by the MAME autoboot/observer scripts:
+These are the Lua modules required by the MAME Lua plugin:
 
 - **luasocket** >= 3.0 — TCP socket communication (observer -> Python gym)
 - **luafilesystem** >= 1.8.0 — Filesystem utilities
@@ -16,7 +16,7 @@ These are the Lua modules required by the MAME autoboot/observer scripts:
 MAME ships its own embedded Lua interpreter. When you run:
 
 ```
-mame coco3 daggorath -autoboot_script emu/autoboot.lua
+mame coco3 daggorath -plugin daggorath
 ```
 
 MAME does **not** consult the system Lua installation, `LUA_PATH`, or any locally installed LuaRocks packages. It runs scripts through its own bundled Lua engine, which only resolves modules from:

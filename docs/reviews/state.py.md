@@ -8,9 +8,9 @@ This records observations, concerns, alternatives, and decisions from a line-by-
 
 ## 1. `FIELDS` visibility
 
-**Observation:** `FIELDS` is a module-level public constant (no `_` prefix). The project convention says Python uses `_` for privacy. `env.py` imports `NUM_FIELDS` (derived from `FIELDS`), never `FIELDS` directly. Tests import `FIELDS`, `FRAME_LEN`, and `NUM_FIELDS` directly — standard test practice for accessing private names.
+**Observation:** `FIELDS` is a module-level public constant (no `_` prefix). The project convention says Python uses `_` for privacy. `environment.py` imports `NUM_FIELDS` (derived from `FIELDS`), never `FIELDS` directly. Tests import `FIELDS`, `FRAME_LEN`, and `NUM_FIELDS` directly — standard test practice for accessing private names.
 
-**Concern:** Making `FIELDS` public exposes internal schema structure that consumers (`env.py`) don't need. The derived `NUM_FIELDS` is the public API surface.
+**Concern:** Making `FIELDS` public exposes internal schema structure that consumers (`environment.py`) don't need. The derived `NUM_FIELDS` is the public API surface.
 
 **Decision:** Deferred. Requires further discussion about whether the schema is a public contract (shared with Lua) or an implementation detail.
 

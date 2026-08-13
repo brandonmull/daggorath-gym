@@ -42,7 +42,7 @@ This document addresses four design questions:
 
 ```
 ┌─ Python ──────────────────────────────────────────┐
-│  env.py        selects command by index            │
+│  environment.py selects command by index           │
 │  commands.py   defines ordered phrase list         │
 │  emulator.py   sends 1 byte over TCP               │
 └──────────────────────┬────────────────────────────┘
@@ -63,7 +63,7 @@ This document addresses four design questions:
 ## Data Flow
 
 ```
-env.py / emulator.py              port 15001          commands.lua            ──── (external) ────
+environment.py / emulator.py              port 15001          commands.lua            ──── (external) ────
 ────────────────────              ──────────          ────────────
 selects command by index
 sends 1 byte ──────────────→  1 byte ──→  frame callback fires
