@@ -51,43 +51,23 @@ local _pixelSnapshot = nil
 local _comColorSnapshot = nil
 local _frameSubscription = nil
 
--- Diagnostic log (file + flush, survives a segfault).
-local _logFile = nil
-local function _log(msg)
-    if not _logFile then
-        _logFile = io.open("/tmp/daggorath-state-log.txt", "w")
-    end
-    if _logFile then
-        _logFile:write(msg .. "\n")
-        _logFile:flush()
-    end
-end
-
 local function _getMemorySpace()
     local cpu = nil
     for tag, device in pairs(manager.machine.devices) do
         if tag == ":maincpu" then cpu = device break end
     end
-    _log("getMem: cpu=" .. tostring(cpu ~= nil))
     if not cpu then return nil end
 
     for name, space in pairs(cpu.spaces) do
-        if name == "program" then
-            _log("getMem: program space found")
-            return space
-        end
+        if name == "program" then return space end
     end
 
-    _log("getMem: no program space")
     return nil
 end
 
 local function _isLive()
-    _log("isLive: before hi read")
     local hi = _memory:read_u8(DISPLAY_FN_HI)
-    _log("isLive: after hi read, before lo read")
     local lo = _memory:read_u8(DISPLAY_FN_LO)
-    _log("isLive: hi=" .. tostring(hi) .. " lo=" .. tostring(lo))
     return (hi * 256 + lo == DISPLAY_LIVE)
 end
 
@@ -156,10 +136,8 @@ end
 -- Per-frame notifier: sample, dedup, and write tagged records.
 local function _onFrame()
     _framesElapsed = _framesElapsed + 1
-    _log("frame " .. _framesElapsed)
 
     if manager.machine.paused then
-        _log("paused")
         return
     end
 
@@ -167,48 +145,31 @@ local function _onFrame()
     -- reset, invalidating the previously cached space.
     _memory = _getMemorySpace()
     if not _memory then
-        _log("failed to acquire memory space")
         return
     end
 
     -- Skip frames that aren't multiples of the sampling rate
     if _framesElapsed % _frameSamplingRate ~= 0 then
-        _log("skipping frame " .. _framesElapsed)
         return
     end
 
+    -- Readiness gate: only sample once the game is in live play.
     if not _isLive() then
-        _log("not live")
         return
     end
 
     local frame = _sampleState()
     if not frame then
-        _log("failed to sample state")
         return
     end
 
-    _log("sampled")
     local stateChanged = (_stateSnapshot == nil) or (frame ~= _stateSnapshot)
 
-    -- The command area exists only in live play: displayFunction (0x02B2–0x02B3)
-    -- is 0xCE66 when the normal playing screen is active and 0x0000 during the
-    -- demo loop. Reading the command area during the demo would dereference a
-    -- garbage COM_START pointer.
-    local displayFn = _memory:read_u8(DISPLAY_FN_HI) * 256
-        + _memory:read_u8(DISPLAY_FN_LO)
-    local isLive = (displayFn == DISPLAY_LIVE)
-
-    local pixels = nil
-    local comColor = nil
-    local pixelChanged = false
-    if isLive then
-        pixels = _readCommandAreaPixels()
-        comColor = _memory:read_u8(COM_COLOR)
-        pixelChanged = (_pixelSnapshot == nil)
-            or (pixels ~= _pixelSnapshot)
-            or (comColor ~= _comColorSnapshot)
-    end
+    local pixels = _readCommandAreaPixels()
+    local comColor = _memory:read_u8(COM_COLOR)
+    local pixelChanged = (_pixelSnapshot == nil)
+        or (pixels ~= _pixelSnapshot)
+        or (comColor ~= _comColorSnapshot)
 
     if stateChanged and pixelChanged then
         _writeRecord("B", frame, comColor, pixels)
@@ -224,7 +185,6 @@ local function _onFrame()
         _comColorSnapshot = comColor
     end
     -- else: nothing changed — write no record
-    _log("wrote")
 end
 
 -- Public: start watching game state.
