@@ -14,6 +14,7 @@ The state channel carries fixed-size tagged records (no delimiter):
 """
 
 import os
+import select
 import socket
 import subprocess
 import time
@@ -21,7 +22,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from . import commands
-from .paths import PROJECT_PATH, EMULATION_PATH
+from .paths import PROJECT_PATH, ROM_PATH, HASH_PATH, PLUGINS_PATH
 from .screen import PIXEL_BYTES, decode_command_area
 from .state import FRAME_LEN, DaggorathState
 
@@ -32,6 +33,9 @@ _RECORD_LENGTHS = {
     b"T": 1 + 1 + PIXEL_BYTES,
     b"B": 1 + FRAME_LEN + 1 + PIXEL_BYTES,
 }
+
+# Seconds to wait for the next state record before giving up.
+_STATE_READ_TIMEOUT = 30.0
 
 
 # ---------- Configuration ----------
@@ -48,9 +52,7 @@ class IpcConfig:
 @dataclass(frozen=True)
 class MameConfig:
     """Parameters for the MAME subprocess."""
-    rom_path: str = os.path.join(PROJECT_PATH, "emulation", "roms")
-    hash_path: str = os.path.join(PROJECT_PATH, "emulation", "hash")
-    plugin_path: str = os.path.join(EMULATION_PATH, "plugins", "daggorath")
+    plugin_name: str = "daggorath"
     sound: str = "sdl"
     window: bool = True
 
@@ -92,7 +94,7 @@ class MameOperator:
         fifo_path = self._ipc_config.state_fifo_path
         self._remove_stale_fifo()
         os.mkfifo(fifo_path)
-        self._state_fd = os.open(fifo_path, os.O_RDWR)
+        self._state_fd = os.open(fifo_path, os.O_RDONLY | os.O_NONBLOCK)
         print(f"[MameOperator] State FIFO ready: {fifo_path}")
 
         # ---------- open the command socket ----------
@@ -170,6 +172,11 @@ class MameOperator:
             record = self._extract_record()
             if record is not None:
                 return self._parse_record(record)
+
+            # ---------- wait for the FIFO to become readable ----------
+            readable, _, _ = select.select([self._state_fd], [], [], _STATE_READ_TIMEOUT)
+            if not readable:
+                raise TimeoutError("Timed out waiting for a state record")
 
             # ---------- read more bytes from the FIFO ----------
             try:
@@ -268,9 +275,10 @@ class MameOperator:
         # ---------- assemble the command ----------
         command_line = [
             "mame", "coco3", "daggorath",
-            "-rompath", config.rom_path,
-            "-hashpath", config.hash_path,
-            "-plugin", config.plugin_path,
+            "-rompath", ROM_PATH,
+            "-hashpath", HASH_PATH,
+            "-pluginspath", PLUGINS_PATH,
+            "-plugin", config.plugin_name,
             "-cfg_directory", mame_scratch_directory,
             "-skip_gameinfo",
             "-nonvram_save",
@@ -285,4 +293,4 @@ class MameOperator:
         env["COMMAND_HOST"] = self._ipc_config.command_host
         env["COMMAND_PORT"] = str(self._ipc_config.command_port)
         print(f"[MameOperator] Launching: {' '.join(command_line)}")
-        return subprocess.Popen(command_line, cwd=EMULATION_PATH, env=env)
+        return subprocess.Popen(command_line, env=env)

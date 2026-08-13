@@ -11,15 +11,17 @@ exports.version = "0.0.1"
 exports.license = "MIT"
 exports.author = { name = "Daggorath Gym" }
 
-local commands = require("commands")
-local state = require("state")
+local commands = require("daggorath/commands")
+local state = require("daggorath/state")
 
 local resetSubscription = nil
 local stopSubscription = nil
 
 local function _onReset()
-    -- Re-acquire memory handles after machine reset
-    -- The state module handles lazy memory acquisition on next frame
+    -- MAME rebuilds the machine on reset; clear cached machine references so
+    -- each module re-acquires them on the next frame.
+    state.onReset()
+    commands.onReset()
 end
 
 local function _onStop()

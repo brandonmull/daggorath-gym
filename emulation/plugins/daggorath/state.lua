@@ -51,21 +51,68 @@ local _pixelSnapshot = nil
 local _comColorSnapshot = nil
 local _frameSubscription = nil
 
--- Read all fields and serialize as a 14-byte string.
-local function _sampleState()
-    local raw = {}
-    for _, field in ipairs(SCHEMA) do
-        if field.width == 2 then
-            -- 6809 is big-endian (MSB at addr, LSB at addr+1).
-            -- Wire format is little-endian: LSB first, then MSB.
-            local lo = _memory:read_u8(field.addr + 1)
-            local hi = _memory:read_u8(field.addr)
-            raw[#raw + 1] = string.char(lo, hi)
-        else
-            raw[#raw + 1] = string.char(_memory:read_u8(field.addr))
+-- Diagnostic log (file + flush, survives a segfault).
+local _logFile = nil
+local function _log(msg)
+    if not _logFile then
+        _logFile = io.open("/tmp/daggorath-state-log.txt", "w")
+    end
+    if _logFile then
+        _logFile:write(msg .. "\n")
+        _logFile:flush()
+    end
+end
+
+local function _getMemorySpace()
+    local cpu = nil
+    for tag, device in pairs(manager.machine.devices) do
+        if tag == ":maincpu" then cpu = device break end
+    end
+    _log("getMem: cpu=" .. tostring(cpu ~= nil))
+    if not cpu then return nil end
+
+    for name, space in pairs(cpu.spaces) do
+        if name == "program" then
+            _log("getMem: program space found")
+            return space
         end
     end
-    return table.concat(raw)
+
+    _log("getMem: no program space")
+    return nil
+end
+
+local function _isLive()
+    _log("isLive: before hi read")
+    local hi = _memory:read_u8(DISPLAY_FN_HI)
+    _log("isLive: after hi read, before lo read")
+    local lo = _memory:read_u8(DISPLAY_FN_LO)
+    _log("isLive: hi=" .. tostring(hi) .. " lo=" .. tostring(lo))
+    return (hi * 256 + lo == DISPLAY_LIVE)
+end
+
+-- Read all fields and serialize as a 14-byte string. Returns nil if any read
+-- fails, so the caller can skip the frame instead of crashing.
+local function _sampleState()
+    local ok, result = pcall(function()
+        local raw = {}
+        for _, field in ipairs(SCHEMA) do
+            if field.width == 2 then
+                -- 6809 is big-endian (MSB at addr, LSB at addr+1).
+                -- Wire format is little-endian: LSB first, then MSB.
+                local lo = _memory:read_u8(field.addr + 1)
+                local hi = _memory:read_u8(field.addr)
+                raw[#raw + 1] = string.char(lo, hi)
+            else
+                raw[#raw + 1] = string.char(_memory:read_u8(field.addr))
+            end
+        end
+        return table.concat(raw)
+    end)
+    if not ok then
+        return nil
+    end
+    return result
 end
 
 -- Read the command-area pixel block as a flat 1024-byte string.
@@ -109,27 +156,45 @@ end
 -- Per-frame notifier: sample, dedup, and write tagged records.
 local function _onFrame()
     _framesElapsed = _framesElapsed + 1
+    _log("frame " .. _framesElapsed)
 
-    -- Lazy-initialize memory space on first sampled frame
+    if manager.machine.paused then
+        _log("paused")
+        return
+    end
+
+    -- Re-acquire the memory space every frame: MAME rebuilds the machine on
+    -- reset, invalidating the previously cached space.
+    _memory = _getMemorySpace()
     if not _memory then
-        local cpu = manager.machine.devices[":maincpu"]
-        if cpu then
-            _memory = cpu.spaces["program"]
-        end
-        if not _memory then
-            return -- CPU not ready yet
-        end
+        _log("failed to acquire memory space")
+        return
     end
 
     -- Skip frames that aren't multiples of the sampling rate
     if _framesElapsed % _frameSamplingRate ~= 0 then
+        _log("skipping frame " .. _framesElapsed)
+        return
+    end
+
+    if not _isLive() then
+        _log("not live")
         return
     end
 
     local frame = _sampleState()
+    if not frame then
+        _log("failed to sample state")
+        return
+    end
+
+    _log("sampled")
     local stateChanged = (_stateSnapshot == nil) or (frame ~= _stateSnapshot)
 
-    -- The command area is only meaningful once the normal screen is live.
+    -- The command area exists only in live play: displayFunction (0x02B2–0x02B3)
+    -- is 0xCE66 when the normal playing screen is active and 0x0000 during the
+    -- demo loop. Reading the command area during the demo would dereference a
+    -- garbage COM_START pointer.
     local displayFn = _memory:read_u8(DISPLAY_FN_HI) * 256
         + _memory:read_u8(DISPLAY_FN_LO)
     local isLive = (displayFn == DISPLAY_LIVE)
@@ -159,6 +224,7 @@ local function _onFrame()
         _comColorSnapshot = comColor
     end
     -- else: nothing changed — write no record
+    _log("wrote")
 end
 
 -- Public: start watching game state.
@@ -177,6 +243,15 @@ function state.beginWatching(stateFile, config)
     end
 
     _frameSubscription = emu.add_machine_frame_notifier(_onFrame)
+end
+
+-- Public: clear machine references so the next frame re-acquires them.
+-- MAME rebuilds the machine on reset, invalidating the cached memory space.
+function state.onReset()
+    _memory = nil
+    _stateSnapshot = nil
+    _pixelSnapshot = nil
+    _comColorSnapshot = nil
 end
 
 return state

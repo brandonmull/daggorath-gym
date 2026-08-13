@@ -94,17 +94,36 @@ local COMMAND_PHRASES = _build_command_phrases()
 
 -- Internal state
 local _socket = nil
-local _keyboard = nil
 local _inputPrimed = false
+local _frameCount = 0
 local _frameSubscription = nil
 
--- Per-frame notifier: prime on first frame, then read commands.
+-- Prime the CoCo's input buffer after this many frames (well past boot).
+local PRIME_FRAME = 300
+
+-- Per-frame notifier: acquire the keyboard, prime on the first frame, then
+-- read commands.
 local function _onFrame()
-    -- Prime the CoCo's input buffer on the first frame
+    _frameCount = _frameCount + 1
+
+    -- beginProcessing() runs during startplugin(), before the machine exists,
+    -- so the keyboard is acquired lazily here once a frame fires.
+    if not manager.machine then
+        return
+    end
+    if not manager.machine.natkeyboard then
+        return
+    end
+
+    local keyboard = manager.machine.natkeyboard
+
+    -- Prime the CoCo's input buffer once past the boot delay.
     if not _inputPrimed then
+        if _frameCount < PRIME_FRAME then
+            return
+        end
         _inputPrimed = true
-        _keyboard:post("\r")
-        _keyboard:post("\r")
+        keyboard:post("\r")
         return
     end
 
@@ -124,20 +143,22 @@ local function _onFrame()
         return
     end
 
-    _keyboard:post(COMMAND_PHRASES[luaIndex] .. "\r")
+    keyboard:post(COMMAND_PHRASES[luaIndex] .. "\r")
 end
 
 -- Public: start processing commands.
 function commands.beginProcessing(socket)
     _socket = socket
-    _keyboard = manager.machine.natkeyboard
-    if not _keyboard then
-        print("[commands] ERROR: natkeyboard port not available")
-        return
-    end
     _inputPrimed = false
+    _frameCount = 0
 
     _frameSubscription = emu.add_machine_frame_notifier(_onFrame)
+end
+
+-- Public: clear machine references so the next frame re-acquires them.
+function commands.onReset()
+    _inputPrimed = false
+    _frameCount = 0
 end
 
 return commands
