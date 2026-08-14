@@ -12,7 +12,7 @@ The observation is the one array the RL agent sees each step. Five channels feed
 
 Five channels feed the observation:
 
-- **State.** Eleven raw fields — `game_mode`, `at_floor`, `at_cell_x`, `at_cell_y`, `at_heading`, `ambient_light`, `player_weight`, `player_strength`, `heart_beat_interval`, `player_fainting`, `evil_wizard_dead` — shipped as uint16. This is the only channel implemented today: `observation_space` is `Box(11,) uint16`.
+- **State.** Twelve raw fields — `game_mode`, `at_floor`, `at_cell_x`, `at_cell_y`, `at_heading`, `ambient_light`, `player_weight`, `player_strength`, `m0221`, `heart_beat_interval`, `player_fainting`, `evil_wizard_dead` — shipped as uint16. This is the only channel implemented today: `observation_space` is `Box(12,) uint16`.
 - **Creatures.** Sight-gated positions: a creature appears with its type and position only while the player sees it; there is no memory of the unseen. The count is variable.
 - **Objects.** Two hands, always visible, plus the pack, variable in size. An unrevealed object shows its class; a revealed object shows its proper name.
 - **Sound.** A fixed-size "nearest N" list of audible cues — distance, sound type, and source — with no direction, several sources at once.
@@ -34,7 +34,7 @@ The encoding decisions, recorded as options and deferred to later sessions:
 
 | Document | What It Contains |
 |----------|-----------------|
-| `docs/plans/state/plan.md` | The eleven raw state fields |
+| `docs/plans/state/plan.md` | The twelve raw state fields |
 | `docs/plans/creatures/plan.md` | Sight-gated positions and the no-memory rule |
 | `docs/plans/objects/plan.md` | Hands, pack, and the reveal distinction |
 | `docs/plans/sound/plan.md` | The auditory cue list — distance, sound type, source |

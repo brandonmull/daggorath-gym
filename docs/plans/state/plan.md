@@ -103,6 +103,7 @@ All addresses were verified against the authoritative memory map ([`ram.md`](../
 | `ambient_light` | 2 | World | Base dungeon illumination (u16, spikes when wizard dies) |
 | `player_weight` | 2 | Body | Strain from carried items (u16) |
 | `player_strength` | 2 | Body | Grows with combat victories (u16) |
+| `m0221` | 2 | Body | Damage pool in combat — each landed hit adds to it; death when it exceeds `player_strength` (u16) |
 | `heart_beat_interval` | 1 | Heart | Raw `heartCounterRel` — ticks between beats; lower = faster |
 | `player_fainting` | 1 | Body | Faint steps remaining — 0 means conscious |
 | `evil_wizard_dead` | 1 | Enemy | FF = wizard defeated |
@@ -120,10 +121,6 @@ heart_rate = 0 when heart_beat_interval == 0  (heart inactive)
 
 The derivation follows from the disassembly: the heart update runs on the CoCo's 60 Hz vertical-blank interrupt (`DEC <heartCounter` at C2AD, reload from `heartCounterRel` at C2B3). The divisor 60 is the interrupt cadence, not MAME's frame rate — cross-checked by the `81 / 60 = 1.35 seconds` sync loop at C67F.
 
-### Known But Not Sampled
-
-`m0221` (0x0221) is the player's **exertion** — the damage pool in combat. Each landed creature hit adds to it, and death is `pStrength < m0221`. It is the most direct combat signal and is not in the frame; the sampled `heart_beat_interval` is only its downstream effect. See `docs/findings/combat-model.md`.
-
 ### Naming Conventions
 
 Fields use semantic prefixes to group related concepts:
@@ -134,7 +131,7 @@ Fields use semantic prefixes to group related concepts:
 | `player_` | `player_weight`, `player_strength`, `player_fainting` | Physical attributes |
 | `heart_` | `heart_beat_interval` | Heartbeat mechanics |
 | `evil_` | `evil_wizard_dead` | Enemy state |
-| _(bare)_ | `game_mode`, `ambient_light` | World state |
+| _(bare)_ | `game_mode`, `ambient_light`, `m0221` | No semantic prefix |
 
 Lua uses camelCase (`heartBeatInterval`), Python uses snake_case (`heart_beat_interval`). The names don't appear on the wire — only the byte order matters — so each side uses the convention appropriate for its language.
 
@@ -175,16 +172,16 @@ The order is the contract. If the two sides fall out of sync, all values shift a
 
 The previous system built a JSON string for each observation — about **250 bytes** of text, of which only ~10 were actual game data. On the emulated 6809 CPU running at ~0.89 MHz, string formatting eats into the frame budget.
 
-**Raw bytes** invert this: we send just the values in schema order. Fourteen bytes carry all eleven fields. The Lua side writes with simple `string.char()` calls — near-zero CPU cost. The Python side reads a byte string and hands it to the schema for deserialization.
+**Raw bytes** invert this: we send just the values in schema order. Sixteen bytes carry all twelve fields. The Lua side writes with simple `string.char()` calls — near-zero CPU cost. The Python side reads a byte string and hands it to the schema for deserialization.
 
 ```
-[00] [01] [16] [0C] [02] [2A] [00] [23] [17] [A0] [50] [16] [00] [00]
-  ↑     ↑     ↑    ↑    ↑    ↑    ↑     ↑    ↑     ↑     ↑    ↑    ↑    ↑
-game  at   at    at   at   ambi ambi plyr  plyr  plyr  heart plyr  evil
-mode  floor cellX cellY head LgtHi LgtLo WgtHi WgtLo StrHi StrLo Inter faint WizDed
+[00] [01] [16] [0C] [02] [2A] [00] [23] [17] [A0] [50] [07] [00] [16] [00] [00]
+  ↑     ↑     ↑    ↑    ↑    ↑    ↑     ↑    ↑     ↑     ↑    ↑    ↑    ↑    ↑    ↑
+game  at   at    at   at   ambi ambi plyr  plyr  plyr  plyr m0221 m0221 heart plyr  evil
+mode  floor cellX cellY head LgtHi LgtLo WgtHi WgtLo StrHi StrLo   Hi    Lo  Inter faint WizDed
 ```
 
-Three fields are u16 (two bytes each: `ambient_light`, `player_weight`, `player_strength`); the remaining eight are u8.
+Four fields are u16 (two bytes each: `ambient_light`, `player_weight`, `player_strength`, `m0221`); the remaining eight are u8.
 
 ### The Tracked Wire Record
 
@@ -192,9 +189,9 @@ The state channel now carries **tagged records** instead of a bare frame. A reco
 
 | Kind | Payload | Meaning |
 |------|---------|---------|
-| `S` | 14-byte frame | Numeric state changed, screen text unchanged |
+| `S` | 16-byte frame | Numeric state changed, screen text unchanged |
 | `T` | 1 byte `comColor` + 1024 pixel bytes | Screen text changed, numeric state unchanged |
-| `B` | 14-byte frame + 1 byte `comColor` + 1024 pixel bytes | Both changed |
+| `B` | 16-byte frame + 1 byte `comColor` + 1024 pixel bytes | Both changed |
 
 This is change detection, not batching. A record in the FIFO means "something meaningful changed." Identical frames are not written at all — replaced by a snapshot comparison in Lua (see §3).
 
@@ -217,7 +214,7 @@ The schema is created once at module import and shared by every `DaggorathState`
 
 | Metric | Previous | This design |
 |--------|----------|-------------|
-| Bytes per wired state frame | 16 | 14 |
+| Bytes per wired state frame | 16 | 16 |
 | Wired records | every frame | only on change |
 | Lua CPU cost | `string.char(read_u8(...))` | same, plus a byte comparison |
 | Python CPU cost | `DaggorathState(line)` | tag dispatch + `DaggorathState` |
@@ -240,7 +237,7 @@ The public API is `state.beginWatching(stateFile, config)` where `config` is `{ 
 | `_memory` | CPU program space, lazy-initialized on first frame |
 | `_framesElapsed` | Counter since `beginWatching()` was called |
 | `_frameSamplingRate` | From config |
-| `_stateSnapshot` | Last-emitted 14-byte numeric frame, for change detection |
+| `_stateSnapshot` | Last-emitted 16-byte numeric frame, for change detection |
 | `_pixelSnapshot` | Last-emitted 1024 pixel bytes + `comColor`, for change detection |
 
 Two internal functions do the work:
@@ -249,7 +246,7 @@ Two internal functions do the work:
 _sampleState()
     → iterates SCHEMA
     → reads each address from _memory as u8 or u16 (little-endian)
-    → concatenates all values into a 14-byte string using string.char()
+    → concatenates all values into a 16-byte string using string.char()
 
 _readCommandAreaPixels()
     → reads comStart from 0x0390–0x0391 (big-endian)
@@ -298,7 +295,7 @@ In addition to the wire fields, `DaggorathState` exposes the derived `heart_rate
 
 `emulator.py`'s `recv()` reads a newline-terminated record from the state FIFO. It dispatches on the kind byte:
 
-- `S` → unpack the 14-byte frame, reuse the last-decoded text
+- `S` → unpack the 16-byte frame, reuse the last-decoded text
 - `T` → decode the pixel block via `screen.py`, reuse the last-known state
 - `B` → unpack both
 
@@ -317,11 +314,11 @@ Testing happens at two levels:
 **Integration test** — launches actual MAME. Lives in `tests/test_emulator.py`. Receives records, constructs `DaggorathState`, asserts field values match known game-startup values, and verifies the first record is a `B`.
 
 **Unit tests** — lives in `tests/test_state.py` (standalone file, no MAME needed, no unified test file). Tests:
-- Schema has 11 fields, `FRAME_LEN` = 14
+- Schema has 12 fields, `FRAME_LEN` = 16
 - `unpack()` with known test bytes → correct typed dict
 - `DaggorathState(raw)` construction → attribute access via `__slots__`
 - `DaggorathState` immutability (`__setattr__` raises `AttributeError`)
-- `to_array()` → correct numpy shape (11,) and uint16 dtype
+- `to_array()` → correct numpy shape (12,) and uint16 dtype
 - `heart_rate` derivation → `60 / interval`, and 0 when the interval is zero
 - Record dispatch → `S`, `T`, and `B` kinds each route correctly
 
@@ -335,7 +332,7 @@ Testing happens at two levels:
 
 `state.beginWatching(stateFile, config)` is the entry point.
 
-The schema is a constant named `SCHEMA` — an ordered array of `{ name, addr, width }` tables (11 entries, listed in §1). The byte order is the shared contract with `DaggorathStateSchema.FIELDS` in Python.
+The schema is a constant named `SCHEMA` — an ordered array of `{ name, addr, width }` tables (12 entries, listed in §1). The byte order is the shared contract with `DaggorathStateSchema.FIELDS` in Python.
 
 ```
 state.beginWatching(stateFile, config)
@@ -348,8 +345,8 @@ per-frame notifier:
     → increments the frame counter
     → lazy-acquires the CPU memory space on first sampled frame
     → skips if the frame isn't a multiple of the sampling rate
-    → reads 11 RAM addresses as u8 or two-byte u16 little-endian
-    → concatenates values into a 14-byte raw frame with string.char()
+    → reads 12 RAM addresses as u8 or two-byte u16 little-endian
+    → concatenates values into a 16-byte raw frame with string.char()
     → reads the command-area pixel block and comColor
     → compares frame and pixels to their snapshots
     → writes an S / T / B tagged record (via pcall)
@@ -360,7 +357,7 @@ per-frame notifier:
 
 Two classes: `DaggorathStateSchema` (flyweight) and `DaggorathState` (immutable value object).
 
-The field definitions are a class attribute named `FIELDS` — a tuple of `(name, offset, width)` 3-tuples in the same order as Lua's `SCHEMA`. No dataclass wrapper. `FRAME_LEN` is 14 (8 u8 + 3 u16 fields).
+The field definitions are a class attribute named `FIELDS` — a tuple of `(name, offset, width)` 3-tuples in the same order as Lua's `SCHEMA`. No dataclass wrapper. `FRAME_LEN` is 16 (8 u8 + 4 u16 fields).
 
 ```
 _schema.unpack(data)
@@ -377,7 +374,7 @@ DaggorathState(data)
     → after construction, __setattr__ raises AttributeError (immutable)
 
 to_array()
-    → returns a uint16 numpy array of the 11 raw fields
+    → returns a uint16 numpy array of the 12 raw fields
 ```
 
 ## Reference Documents

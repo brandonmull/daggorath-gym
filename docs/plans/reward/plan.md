@@ -26,7 +26,7 @@ Conditions the agent should seek or avoid, each drawn from a state signal:
 |-----------|--------|----------------|
 | Strength | `player_strength` — grows with every kill | Yes |
 | Sight | torch minutes remaining (lit torch, slot + 6) | No — object detection |
-| Survival | `player_strength − m0221` — the margin to death | Partly — `m0221` not sampled |
+| Survival | `player_strength − m0221` — the margin to death | Yes |
 | Holdings | powerful objects in hand or pack | No — object detection |
 | Safety | absence of creatures in or near the cell | No — creature detection |
 | Strain | `player_weight` | Yes |
