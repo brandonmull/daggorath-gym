@@ -87,7 +87,7 @@ class DaggorathEnv(gym.Env):
 
     def _compute_reward(self, state) -> float:
         raise NotImplementedError(
-            "Reward function not designed. See plans/reward.md (TBD)."
+            "Reward function not designed. See plans/reward/plan.md."
         )
 
     def _check_terminated(self, state) -> bool:

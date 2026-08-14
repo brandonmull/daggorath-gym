@@ -1,6 +1,6 @@
 # Screen Reading Module
 
-_See [overview.md](overview.md) for project context and architecture._
+_See [overview.md](../overview.md) for project context and architecture._
 
 This document addresses two design questions:
 
@@ -57,7 +57,7 @@ The decoder walks each of the 32 character columns in a text row, reads 7 bytes 
 
 ## Capture
 
-The capture logic lives in `state.lua` as part of the per-frame state sampler. It reads `comStart` and `comColor` each frame and copies the 1024-byte region, then hands those bytes to the same change-detection snapshot used for the numeric state (see `state-module.md`).
+The capture logic lives in `state.lua` as part of the per-frame state sampler. It reads `comStart` and `comColor` each frame and copies the 1024-byte region, then hands those bytes to the same change-detection snapshot used for the numeric state (see `docs/plans/state/plan.md`).
 
 ```
 readCommandAreaPixels()
@@ -114,4 +114,4 @@ Both cases already passed in `sandbox/screen-reading/`; they become regression t
 |----------|-----------------|
 | `sandbox/screen-reading/` | Validated capture + decode pipeline (`shared.lua`, `shared.py`, two experiments) |
 | `docs/references/game/code.md` | `PrintRegChar` disassembly and the font table |
-| `docs/plans/state-module.md` | How the captured pixels flow into the state wire format |
+| `docs/plans/state/plan.md` | How the captured pixels flow into the state wire format |

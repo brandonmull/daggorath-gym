@@ -1,6 +1,6 @@
 # Game State Module
 
-_See [overview.md](overview.md) for project context and architecture._
+_See [overview.md](../overview.md) for project context and architecture._
 
 This document addresses four design questions:
 
@@ -119,6 +119,10 @@ heart_rate = 0 when heart_beat_interval == 0  (heart inactive)
 ```
 
 The derivation follows from the disassembly: the heart update runs on the CoCo's 60 Hz vertical-blank interrupt (`DEC <heartCounter` at C2AD, reload from `heartCounterRel` at C2B3). The divisor 60 is the interrupt cadence, not MAME's frame rate — cross-checked by the `81 / 60 = 1.35 seconds` sync loop at C67F.
+
+### Known But Not Sampled
+
+`m0221` (0x0221) is the player's **exertion** — the damage pool in combat. Each landed creature hit adds to it, and death is `pStrength < m0221`. It is the most direct combat signal and is not in the frame; the sampled `heart_beat_interval` is only its downstream effect. See `docs/findings/combat-model.md`.
 
 ### Naming Conventions
 
@@ -321,7 +325,7 @@ Testing happens at two levels:
 - `heart_rate` derivation → `60 / interval`, and 0 when the interval is zero
 - Record dispatch → `S`, `T`, and `B` kinds each route correctly
 
-**Screen decode tests** live with the screen module (see `screen-module.md`): known pixel blocks decode to `PULL LEFT TORCH` and `???`.
+**Screen decode tests** live with the screen module (see `docs/plans/screen/plan.md`): known pixel blocks decode to `PULL LEFT TORCH` and `???`.
 
 ---
 
@@ -383,7 +387,11 @@ to_array()
 | `docs/references/game/commands.md` | Original game manual + ROM-derived command grammar, object tables, incantation words |
 | `docs/references/game/ram.md` | Memory map — every known RAM address and what it stores |
 | `docs/references/game/code.md` | Full 6809 disassembly of the game |
-| `docs/plans/screen-module.md` | Screen-reading plan — capture and decode of command-area text |
+| `docs/plans/screen/plan.md` | Screen-reading plan — capture and decode of command-area text |
+| `docs/plans/creatures/plan.md` | Creature detection — knowns, unknowns, and open questions |
+| `docs/plans/objects/plan.md` | Object detection — knowns, unknowns, and open questions |
+| `docs/plans/reward/plan.md` | Reward — potential-based shaping over player-perceived state |
 | `docs/findings/ipc.md` | IPC transport evaluation — FIFO for state, TCP for commands |
+| `docs/findings/combat-model.md` | The strength-vs-damage combat model and the sound proximity channel |
 | `docs/plans/overview.md` | Project context and architecture |
-| `docs/plans/commands-module.md` | Companion plan for the commands module |
+| `docs/plans/commands/plan.md` | Companion plan for the commands module |

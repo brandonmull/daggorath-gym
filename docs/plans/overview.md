@@ -56,6 +56,30 @@ MAME lets us attach **Lua scripts** that run alongside the emulated machine. The
 - **Change detection, not frame-by-frame** — the state channel emits a record only when something meaningful changes (numeric state or command-area text), not every frame. Identical frames are dropped in Lua against a snapshot.
 - **Flyweight pattern** — shared schema objects on both sides, per-change value objects. Schema defines the contract once; instances are light.
 
+## Observation Principles
+
+These govern what the agent sees — the answer to "what does the player perceive, and how faithfully do we reproduce it."
+
+### Perception vs. proprioception.
+
+World state — creatures, floor objects, walls, light — is perception-gated: the agent gets only what sight and sound convey. Self state — strength, heart, exertion, carried weight, hands, pack, torch-in-hand — is full precision. The argument: the player knows their own body through experience even without a display, and RL agents conventionally read their own internal state; only the outside world is ever hidden from them.
+
+### Hidden vs. imprecise.
+
+Gate what the player *cannot* know (a creature's hitpoints, a threat around the corner). Give precision for what the player knows only *imprecisely* (their own strength, their racing heart, the torch's remaining life). "Not displayed as a number" is not "not known" — the game teaches strength through kill efficiency, so the player knows it without seeing it.
+
+### The environment owns true state; the observation is sensory.
+
+The environment tracks true state regardless — reward and termination are computed on it, whether or not the agent observes it. Whether a self-state number also appears in the observation is a courtesy, not a necessity; the open question for any such signal is "who is responsible for knowing it — the environment or the agent?"
+
+### "Cell," not "room."
+
+The maze is a uniform 32×32 grid of cells. The game has no rooms — only halls (the renderer cannot draw a 2×2 block of open cells). Use "cell" for a grid position; never "room."
+
+### The curriculum is the bridge.
+
+Environment-provided conveniences — a memory buffer, a sound→source association, a strength number — are provisional scaffolding for capabilities that conceptually belong to the player, and hence to the agent. Expose them now to make training tractable; the curriculum removes them in later stages, so the agent learns the capability itself.
+
 ## Naming Conventions
 
 ### All names come from the plan docs — never improvise.
@@ -91,9 +115,17 @@ The project uses a three-phase documentation pipeline:
 
 | Document | What It Contains |
 |----------|-----------------|
-| `docs/plans/state-module.md` | Game state reporting module plan |
-| `docs/plans/commands-module.md` | Command dispatch module plan |
-| `docs/plans/screen-module.md` | Screen reading module plan — capture and decode of command-area text |
+| `docs/plans/state/plan.md` | Game state reporting module plan |
+| `docs/plans/commands/plan.md` | Command dispatch module plan |
+| `docs/plans/screen/plan.md` | Screen reading module plan — capture and decode of command-area text |
+| `docs/plans/creatures/plan.md` | Creature detection — knowns, unknowns, and open questions |
+| `docs/plans/objects/plan.md` | Object detection — knowns, unknowns, and open questions |
+| `docs/plans/reward/plan.md` | Reward — potential-based shaping over player-perceived state |
+| `docs/plans/sound/plan.md` | Sound — the auditory observation channel |
+| `docs/plans/navigation/plan.md` | Navigation — maze decoding and line-of-sight |
+| `docs/plans/events/plan.md` | Events — the deferred event channel and its candidate catalog |
+| `docs/plans/observation/plan.md` | Observation — how the five channels combine into one array |
+| `docs/plans/curriculum/plan.md` | Curriculum — staged removal of scaffolding |
 | `docs/reviews/environment.py.md` | environment.py design review (observations, deferred items) |
 | `docs/reviews/emulator.py.md` | emulator.py design review (observations, deferred items) |
 | `docs/reviews/state.py.md` | state.py design review (observations, deferred items) |
@@ -111,6 +143,7 @@ The project uses a three-phase documentation pipeline:
 | `docs/findings/ipc.md` | IPC transport evaluation — FIFO vs TCP vs Unix sockets |
 | `docs/findings/ram-signals.md` | RAM signal catalog — readiness and command-acceptance signals |
 | `docs/findings/memory-reads.md` | Safe RAM reads + segfault debugging in MAME Lua |
+| `docs/findings/combat-model.md` | The strength-vs-damage combat model and the sound proximity channel |
 | `docs/references/game/commands.md` | Original game manual + ROM-derived command grammar, object tables, incantation words |
 | `docs/references/game/ram.md` | Memory map — every known RAM address and what it stores |
 | `docs/references/game/code.md` | Full 6809 disassembly of the game |

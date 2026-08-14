@@ -1,6 +1,6 @@
 # Commands Module
 
-_See [plans/overview.md](overview.md) for project context and architecture._
+_See [plans/overview.md](../overview.md) for project context and architecture._
 
 > **Status:** In progress — sandbox validation complete, implementation exists.
 
@@ -272,7 +272,7 @@ The module defines the same grammar constants as the Lua side: object classes, p
 | Document | What It Contains |
 |----------|-----------------|
 | `emulation/docs/commands.md` | Original game manual + ROM-derived command grammar, object tables, incantation words |
-| `docs/plans/state-module.md` | Companion plan for the game state module |
+| `docs/plans/state/plan.md` | Companion plan for the game state module |
 | `docs/plans/overview.md` | Project context and architecture |
 | `docs/findings/ipc.md` | IPC transport evaluation — FIFO for state, TCP for commands |
 | `sandbox/typing-timing/` | Validated natkeyboard:post() delivery |
