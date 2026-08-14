@@ -86,3 +86,19 @@
 
 **Resolution:** no pick-up/drop event for now (holdings + sight potentials reward the value; only the Supreme Ring is discrete, via the two-stage win); pick-up/drop is a natural candidate for the deferred event-based architecture.
 
+### Shield defense — the Shield Fix ROM
+
+**From the conversation:**
+
+> *Antecedent — `plan.md` "Unknowns" still held the shield defense swap, stated as a bug but with the live values unresolved:*
+>
+> **Cline:** "`ObjectSpecial` notes the shield magic/physical defense values are swapped — a known bug, so the live combat factors are the swapped ones."
+>
+> **You:** "there was a necessary update to original rom that has something to do with a shield fix. this updated rom is the one we currently use. perhaps that has something to do with the item you couldn't resolve."
+
+> ### The Crux
+>
+> **Cline:** "The reference docs transcribe the original, buggy ROM — but the ROM we actually run is a patched one. The Shield Fix (Aaron Oliver, the same person credited in `code.md`'s `ObjectSpecial` comment) physically swaps the two defense bytes at DA78/DA88, so the disassembly's shield table no longer matches what MAME serves."
+
+**Resolution:** the swap is not live — our ROM is the Shield Fix build (CRC `c985282a`), which swaps DA78 → `0B 80 60 00` and DA88 → `10 80 6C 00` (file offsets 0x1A78/0x1A88), verified as the only divergence from the disassembly across the object tables. Live shield defense is a damage multiplier (0x80 = 1.0) loaded from slot + 6 / slot + 7 into `m021A`/`m021C`: bronze 75%, leather 84% physical reduction, no magic protection; mithril 50% of both. Closed in `plan.md` "Knowns".
+

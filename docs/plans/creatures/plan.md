@@ -15,6 +15,10 @@ The creature array is 32 slots at 0x03D4, 17 bytes per slot. The disassembly wal
 | Address | Meaning |
 |----------|---------|
 | slot + 0 | Strength — max hitpoints, 2 bytes big-endian; also the kill reward (player gains strength / 8) |
+| slot + 2 | Magic attack — multiplies attacker strength in the damage formula |
+| slot + 3 | Magic shield — incoming magic damage multiplier (0x80 = full damage) |
+| slot + 4 | Physical attack — multiplies attacker strength in the damage formula |
+| slot + 5 | Physical shield — incoming physical damage multiplier (0x80 = full damage) |
 | slot + 10 | Damage taken — hitpoints left = strength - damage |
 | slot + 12 | Alive — `FF` = alive, `0` = dead or empty slot (`DEC` marks living, `CLR` marks dead) |
 | slot + 13 | Type — one of the 12 types catalogued below |
@@ -52,7 +56,7 @@ The 12-type catalogue is resolved. Every type token (the byte at `slot + 13`) in
 Traced in the disassembly (`docs/references/game/code.md`):
 
 - `CreateCreature` (CFA5) stores the type at `slot + 13` ("Set the type"), indexes the class table at `type × 8 + DABB` ("Add to creature-class data table"), and copies its eight bytes into the slot ("8 bytes of init data" / "Copy the 8 bytes of initial data").
-- `MonsterData` (DABB) is that class table — one 8-byte entry per type in token order. Its header names the fields (`To-kill  See  MShield  Damage  PShield  task-speed`); "To-kill" is the leading two-byte strength.
+- `MonsterData` (DABB) is that class table — one 8-byte entry per type in token order. Its header names the fields (`To-kill  See  MShield  Damage  PShield  task-speed`); "To-kill" is the leading two-byte strength, and the middle four are the combat multipliers — `See` = magic attack, `MShield` = magic shield, `Damage` = physical attack, `PShield` = physical shield (slots + 2 through + 5). See `docs/findings/combat-model.md`.
 - The kill site reads the strength back as 16 bits: `D347: LDD ,U` ("Monster strength"), `DRight3` at D37F ("divide by 8"), added to `pStrength`.
 - `CreaturePictures` (DAA3) and `SoundEffectsRoutines` (C7DC) name all 12 types in token order; C7DC's comments run `00 Spider` through `0B Wizard`, so a creature's sound effect number is its type token.
 - The level-spawn loop walks the count table from type 0x0B down to 0x00 ("Start with most powerful", C781), matching the strength column (Wizard strongest).
@@ -60,7 +64,6 @@ Traced in the disassembly (`docs/references/game/code.md`):
 
 ## Unknowns
 
-- **Combat multipliers.** Creature offsets 0x02–0x05 feed the damage formula but are not individually decoded.
 - **`creatureCounts` semantics.** Kills decrement it. It is not traced whether spawning also decrements it, so it is unclear whether the table means "alive right now" or "still to be placed."
 - **Read atomicity.** Each byte read is atomic, but a 32-slot scan spans many instructions. A creature moving or dying mid-scan could produce a torn snapshot. **Important investigation point** — needs dedicated discussion; a torn snapshot corrupts the exact observation this module exists to deliver.
 - **Player death.** On death the game returns to demo mode and hangs; it is not traced what happens to the array or the count table in that state.

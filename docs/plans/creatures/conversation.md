@@ -80,3 +80,17 @@
 
 **Resolution:** the 12-type table is catalogued in `plan.md` ("Knowns") and the "Type catalogue" unknown is closed. Evidentiary comments: `CreateCreature` (CFA5) — "Set the type", "8 bytes of init data", "Add to creature-class data table"; `MonsterData` (DABB) — "To-kill" names the first two bytes, the strength; the kill site (D347) — "Monster strength ... divided by 8" reads it back as 16 bits; `SoundEffectsRoutines` (C7DC) — "00 Spider" through "0B Wizard" confirms the sound effect number equals the type token; level setup (C75B) — "12 bytes each (one byte to count each type of creature)". Also found: the random spawner (`T4_MakeCreature`, D039) adds only types 2–9 — "not spider, snake, demon, or wizard" — and the level listings use longer display names (`CLUB GIANT`, `PLAIN KNIGHT`).
 
+### Combat multipliers — the six-field layout
+
+**From the conversation:**
+
+> *Antecedent — `plan.md` "Unknowns" listed combat multipliers: "Creature offsets 0x02–0x05 feed the damage formula but are not individually decoded."*
+>
+> **Cline:** "The shield-defense trace walked `D40C`, the single combat-resolution routine — and it decodes those four offsets for free."
+
+> ### The Crux
+>
+> **Cline:** "`D40C` pairs the attacker's 0x02/0x04 against the defender's 0x03/0x05, so player and creature share one layout: 0x02 = magic attack, 0x03 = magic shield, 0x04 = physical attack, 0x05 = physical shield."
+
+**Resolution:** the four offsets are catalogued in `plan.md` (the slot table and the `MonsterData` bullet) and the "Combat multipliers" unknown is closed. Evidence: `D40C` multiplies attacker 0x02 × defender 0x03 and attacker 0x04 × defender 0x05; `CmdATTACK` (D2C4–D2CA) sets the player's 0x02/0x04 from the weapon's power; the creature-attack path (D07A–D087) sets the player's 0x03/0x05 from the held shield. The `MonsterData` header names the creature bytes `See`/`MShield`/`Damage`/`PShield` — `See` is the magic attack, `Damage` the physical attack.
+

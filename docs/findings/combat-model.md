@@ -22,16 +22,29 @@ Both combatants are a strength pool minus a damage pool, and death is the damage
 
 Hitpoints remaining: creature `strength - damage`; player `pStrength - m0221`. A landed hit *adds* to the defender's damage pool — the amount scales with the attacker's strength and weapon factors, rather than a fixed decrement.
 
-## Damage formula (partially decoded)
+## Damage formula
 
-Each landed hit adds:
+Each landed hit adds to the defender's damage pool:
 
-`attacker_strength × factor1a × factor1b + attacker_strength × factor2a × factor2b`
+`attacker_strength × attacker_magic_attack × defender_magic_shield + attacker_strength × attacker_physical_attack × defender_physical_shield`
 
-computed through the 16×8 multiply routine `D436`. The factors:
+computed through the 16×8 multiply routine `D436`. `D40C` reads the attacker's offsets 0x02 and 0x04 against the defender's offsets 0x03 and 0x05, so both combatants share one six-field layout:
 
-- Player weapon factors `m0219` (magic power) and `m021B` (physical power), set from the held object's power at `D2C4–D2CA`.
-- Creature combat factors at offsets `0x02`, `0x03`, `0x04`, `0x05` — still `??` in ram.md; the individual meaning of each is not decoded.
+| Offset | Meaning |
+|--------|---------|
+| 0x02 | Magic attack |
+| 0x03 | Magic shield |
+| 0x04 | Physical attack |
+| 0x05 | Physical shield |
+
+- Player factors are `m0219`/`m021A`/`m021B`/`m021C` at 0x0217. `CmdATTACK` sets `m0219`/`m021B` from the held weapon's magic/physical power (`D2C4–D2CA`); the creature-attack path sets `m021A`/`m021C` from the held shield's defense (`D07A–D087`).
+- Creature factors come from the `MonsterData` (DABB) class entry, whose header names the four bytes `See`/`MShield`/`Damage`/`PShield` — `See` is the magic attack, `Damage` the physical attack.
+
+## Shield defense
+
+Shield and monster-defense values are damage multipliers normalized to 0x80 = 1.0 (lower blocks more: 0x40 = 0.5). A held shield's magic defense (slot + 6) and physical defense (slot + 7) load into `m021A`/`m021C` (`D07A–D087`), defaulting to 0x80/0x80 with no shield; `D40C` multiplies the incoming magic and physical terms by those factors.
+
+The original ROM stores leather and bronze shields swapped — magic 0x6C/0x60, physical 0x80 — so those physical-only shields block magic instead of physical. The ROM in use is the Shield Fix build (Aaron Oliver, CRC `c985282a`), which exchanges those two bytes at `DA78`/`DA88`; the live values are leather 0x6C (84%) and bronze 0x60 (75%) physical reduction with no magic protection, mithril 0x40 (50%) of both.
 
 ## Combat signals
 
