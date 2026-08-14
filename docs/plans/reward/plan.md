@@ -46,9 +46,9 @@ One-shot rewards for discrete happenings:
 | Incant | ring word (slot + 7) clears, proper name changes |
 | Descend | a deeper `at_floor` than any reached this episode |
 | Wizard dead | `evil_wizard_dead` → FF |
-| Win | the FINAL incantation (PlayerWins); detection signal not yet pinned down |
+| Win | the incanted ring's proper type (slot + 9) → 0x12 (FINAL) |
 
-The win is two events — the Wizard dies, then the Supreme Ring is incanted — and both merit reward.
+The win is two events — the Wizard dies, then the Supreme Ring is incanted — and both merit reward. The terminal is detected by the ring's own field: incanting FINAL writes 0x12 (FINAL) into the held ring's proper-type field (slot + 9) and clears its word (slot + 7) in the same burst that renders the win screen. That field is the win's only persistent RAM trace — `PlayerWins` writes no durable flag (its `initBeamIn` write is cleared within the same beam call), and the game then freezes in an endless loop, so there is no separate win-screen flag to sample.
 
 ## Rules
 
@@ -62,7 +62,6 @@ The win is two events — the Wizard dies, then the Supreme Ring is incanted —
 
 - **Scaling.** What coefficient per potential, per spike, and per information-gain transition, and what γ?
 - **Termination coupling.** Loss (death → `game_mode` FF, or `player_strength < m0221`) and the two-stage win straddle reward and termination — where is the boundary?
-- **Win detection.** How is the FINAL incantation (PlayerWins) observed in RAM — a flag, the FINAL ring in hand, or screen text?
 - **Novelty tracking.** How is "first time known" represented — per-creature seen flags, per-cell explored flags, per-object revealed flags? Information gain needs a novelty memory, which is an observation question (what the agent has seen, not what exists).
 
 ## Reference Documents
