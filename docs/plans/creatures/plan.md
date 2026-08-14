@@ -14,10 +14,10 @@ The creature array is 32 slots at 0x03D4, 17 bytes per slot. The disassembly wal
 
 | Address | Meaning |
 |----------|---------|
-| slot + 0 | Strength — max hitpoints; also the kill reward (player gains strength / 8) |
+| slot + 0 | Strength — max hitpoints, 2 bytes big-endian; also the kill reward (player gains strength / 8) |
 | slot + 10 | Damage taken — hitpoints left = strength - damage |
 | slot + 12 | Alive — `FF` = alive, `0` = dead or empty slot (`DEC` marks living, `CLR` marks dead) |
-| slot + 13 | Type — 12 creature types; `0x0A` = Demon, `0x0B` = Wizard |
+| slot + 13 | Type — one of the 12 types catalogued below |
 | slot + 14 | Direction |
 | slot + 15 | Y coordinate — same grid as the player |
 | slot + 16 | X coordinate |
@@ -26,15 +26,40 @@ Verified from the disassembly:
 
 - Kills grant strength equal to the creature's strength divided by eight, so the player-strength delta is already a kill signal.
 - Killing type 0x0A (Demon) advances the player to level 4; killing 0x0B (Wizard) flips `evil_wizard_dead`.
-- A kill decrements the creature's type entry in `creatureCounts`, a 12-byte per-type count table pointed to by 0x0282.
-- The array holds the monsters of the current level (comment at C790) and is rebuilt on level change; at most 32 creatures exist per level, and one random creature spawns every five minutes.
+- A kill decrements the creature's type entry in `creatureCounts`, a 12-byte per-type count table pointed to by 0x0282; the table lives at `0x0398 + currentLevel × 12` ("12 bytes each (one byte to count each type of creature)", C75B).
+- The array holds the monsters of the current level (comment at C790) and is rebuilt on level change; at most 32 creatures exist per level, and every five minutes `T4_MakeCreature` (D027) adds one random creature of type 0x02–0x09 — "not spider, snake, demon, or wizard" (D039).
 - `GetCreatureAt` is called with the player's Y/X, so creature and player coordinates share a grid.
 - Combat is a strength pool versus a damage pool. Each landed hit adds to the defender's pool (creature offset `0x0A`; the player's `m0221` at 0x0221), and death is the damage pool overtaking the strength pool — so hitpoints left = strength - damage. See `docs/findings/combat-model.md`.
 - An unseen creature announces itself by sound: Chebyshev distance ≤ 8, volume 255 - 31×distance, and the sound is the creature's type. The disassembly reads a 2-cell corridor gate, but this is disputed (see `sound/plan.md`). The Seer scroll (`scrollType`, 0x0294) reveals all creatures on the map.
 
+The 12-type catalogue is resolved. Every type token (the byte at `slot + 13`) indexes three parallel ROM tables laid out in the same order — sound routine (C7DC), creature picture (DAA3), and an 8-byte creature-class entry (DABB). The class entry's first two bytes are the creature's strength, copied to `slot + 0`.
+
+| Token | Name          | Strength      |
+|-------|---------------|---------------|
+| 0x00  | Spider        | 32 (0x0020)   |
+| 0x01  | Snake         | 56 (0x0038)   |
+| 0x02  | Giant         | 200 (0x00C8)  |
+| 0x03  | Blob          | 304 (0x0130)  |
+| 0x04  | Knight        | 504 (0x01F8)  |
+| 0x05  | Hatchet-giant | 704 (0x02C0)  |
+| 0x06  | Scorpion      | 400 (0x0190)  |
+| 0x07  | Shield-knight | 800 (0x0320)  |
+| 0x08  | Wraith        | 800 (0x0320)  |
+| 0x09  | Galdrog       | 1000 (0x03E8) |
+| 0x0A  | Demon         | 1000 (0x03E8) |
+| 0x0B  | Wizard        | 8000 (0x1F40) |
+
+Traced in the disassembly (`docs/references/game/code.md`):
+
+- `CreateCreature` (CFA5) stores the type at `slot + 13` ("Set the type"), indexes the class table at `type × 8 + DABB` ("Add to creature-class data table"), and copies its eight bytes into the slot ("8 bytes of init data" / "Copy the 8 bytes of initial data").
+- `MonsterData` (DABB) is that class table — one 8-byte entry per type in token order. Its header names the fields (`To-kill  See  MShield  Damage  PShield  task-speed`); "To-kill" is the leading two-byte strength.
+- The kill site reads the strength back as 16 bits: `D347: LDD ,U` ("Monster strength"), `DRight3` at D37F ("divide by 8"), added to `pStrength`.
+- `CreaturePictures` (DAA3) and `SoundEffectsRoutines` (C7DC) name all 12 types in token order; C7DC's comments run `00 Spider` through `0B Wizard`, so a creature's sound effect number is its type token.
+- The level-spawn loop walks the count table from type 0x0B down to 0x00 ("Start with most powerful", C781), matching the strength column (Wizard strongest).
+- The three ROM tables agree on the short names above; the level listings use longer display names (`CLUB GIANT` for Giant, `PLAIN KNIGHT` for Knight).
+
 ## Unknowns
 
-- **Type catalogue.** Only Demon and Wizard are confirmed. The other ten types and their strengths live in ROM data tables not yet catalogued. **Blocks the observation** — the creature array's type field and the sound channel's "sound = type" cue can't be populated until this is catalogued.
 - **Combat multipliers.** Creature offsets 0x02–0x05 feed the damage formula but are not individually decoded.
 - **`creatureCounts` semantics.** Kills decrement it. It is not traced whether spawning also decrements it, so it is unclear whether the table means "alive right now" or "still to be placed."
 - **Read atomicity.** Each byte read is atomic, but a 32-slot scan spans many instructions. A creature moving or dying mid-scan could produce a torn snapshot. **Important investigation point** — needs dedicated discussion; a torn snapshot corrupts the exact observation this module exists to deliver.

@@ -64,3 +64,19 @@
 
 **Resolution:** for the prototype, combat signals come from existing sources (screen `!!!`, sound, alive flags, `m0221`); the event channel is a deferred idea, not forgotten.
 
+### Type catalogue — the 12 types and their strengths
+
+**From the conversation:**
+
+> *Antecedent — `plan.md` "Unknowns" flagged the type catalogue as reward-blocking, with only Demon (0x0A) and Wizard (0x0B) confirmed:*
+>
+> **Cline:** "The other ten types and their strengths live in ROM data tables not yet catalogued."
+>
+> **You:** "Trace the tables around `T4_MakeCreature` (D027) and `GetCreatureAt` in `code.md`. Deliverable: the full 12-type table (token, name, strength) in the plan's 'Knowns,' with disassembly addresses as evidence."
+
+> ### The Crux
+>
+> **Cline:** "Every type token indexes three parallel ROM tables laid out in the same order — sound routine (C7DC), creature picture (DAA3), and an 8-byte creature-class entry (DABB). `CreateCreature` copies `type × 8 + DABB` into the slot, so the class entry's first two bytes are the strength."
+
+**Resolution:** the 12-type table is catalogued in `plan.md` ("Knowns") and the "Type catalogue" unknown is closed. Evidentiary comments: `CreateCreature` (CFA5) — "Set the type", "8 bytes of init data", "Add to creature-class data table"; `MonsterData` (DABB) — "To-kill" names the first two bytes, the strength; the kill site (D347) — "Monster strength ... divided by 8" reads it back as 16 bits; `SoundEffectsRoutines` (C7DC) — "00 Spider" through "0B Wizard" confirms the sound effect number equals the type token; level setup (C75B) — "12 bytes each (one byte to count each type of creature)". Also found: the random spawner (`T4_MakeCreature`, D039) adds only types 2–9 — "not spider, snake, demon, or wizard" — and the level listings use longer display names (`CLUB GIANT`, `PLAIN KNIGHT`).
+
