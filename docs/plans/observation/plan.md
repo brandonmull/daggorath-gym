@@ -28,7 +28,10 @@ The encoding decisions, recorded as options and deferred to later sessions:
 - **Sound slots.** The size N of the nearest-N list, and whether a seen creature appears in both channels — seen and heard, like a real player — or sound reports only unseen creatures. The sound plan says both "proximity for unseen creatures" and "the full auditory scene," which conflict until this is settled.
 - **Object slots.** The bound on the pack (the two hands are fixed), and how reveal appears in the encoding. One option: each slot is a specifier index 0–30 — the commands module's 31 specifiers enumerate bare class and proper name, so an unrevealed object is simply its bare-class specifier.
 - **Normalization.** Ship the raw uint16 values and normalize in a wrapper later, or ship scaled values. The shape is the design question now; scaling is a knob for the first training run.
-- **Novelty flags.** Whether "first time seen, explored, or revealed" — the information-gain bookkeeping — lives in the observation or stays internal to the reward layer.
+
+## Decisions
+
+- **No novelty in the observation.** "First time seen, explored, or revealed" is not an observation channel — it is the reward wrapper's bookkeeping for the information-gain layer. The observation reports perception only; the reward reads true state directly (see `reward/plan.md`), and novelty never enters the step return.
 
 ## Reference Documents
 
@@ -39,4 +42,4 @@ The encoding decisions, recorded as options and deferred to later sessions:
 | `docs/plans/objects/plan.md` | Hands, pack, and the reveal distinction |
 | `docs/plans/sound/plan.md` | The auditory cue list — distance, sound type, source |
 | `docs/plans/navigation/plan.md` | The 32×32 maze and the explored-with-memory map |
-| `docs/plans/reward/plan.md` | The information-gain layer that needs novelty tracking |
+| `docs/plans/reward/plan.md` | The reward and its novelty memory |

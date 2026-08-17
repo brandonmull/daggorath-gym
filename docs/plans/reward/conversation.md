@@ -88,3 +88,101 @@
 
 **Resolution:** a third layer joins the two — information gain, novelty-bounded rewards for the unknown→known transition.
 
+### "Only the agent cares about novelty" → the environment/agent boundary
+
+**From the conversation:**
+
+> *Antecedent — the novelty-tracking prompt asked how "first time seen/explored/revealed" is represented, and I had proposed a novelty memory owned by the reward layer:*
+>
+> **You:** "when it comes to visitation of locations within a world, the environment can report the visitation but it shouldn't care whether that has been done before, only the agent cares."
+
+> ### The Crux
+>
+> **Cline:** "Novelty is not a thing the environment computes. It's a thing the environment's reports let the agent compute."
+
+**Resolution:** the environment reports perception — including visitation — and never judges whether something has been seen before. Novelty is subjective, so it belongs on the agent side.
+
+### "Reward calculation shouldn't be in the environment" → three-role split
+
+**From the conversation:**
+
+> **You:** "this is one of the reasons i disagree with environment being responsible for reward calculation at all."
+
+> ### The Crux
+>
+> **Cline:** "The reward is part of the task, not part of the world. The environment answers 'what is true and what does the player perceive'; the reward answers 'is this situation good.' Environment = objective reporter, reward = valuation, agent = learner."
+
+**Resolution:** reward is a separate component from the environment — the environment reports facts and perception; the reward assigns value; the agent learns.
+
+### "Even reward facts are facts" → fact vs valuation
+
+**From the conversation:**
+
+> **You:** "in super mario brothers, obtaining coins is a fact and is defined by the game as a measure of reward; also, completing levels is a fact... however, there is always an element of subjective interpretation to those rewarding facts/events which should be up to the training algorithm (player) to determine for themselves. ... the distinguishment is even more complex due to the interplay of game elements and game mechanics."
+
+> ### The Crux
+>
+> **Cline:** "The boundary isn't 'rewarding facts' vs 'non-rewarding facts.' It's fact vs valuation, all the way down. The environment's side is 'what is true / what happened / what the player perceives'; the other side is 'what any of it is worth.'"
+
+**Resolution:** even a game's own reward signals (score, victory, kill-grants-strength) are facts, not value. The environment reports facts and events; the reward assigns all value. Daggorath is harder because potentials and entangled mechanics (strength ↔ kills ↔ combat ↔ exertion ↔ safety ↔ light) are pure interpretation.
+
+### "SB3: wrapper, scalar reward" → the customization surface
+
+**From the conversation:**
+
+> **You:** "what options does stablebaselines3 provide for customization. is it possible to override the reward environment returns? does reward have to be one dimensional? can we control how reward is used in training?"
+
+> ### The Crux
+>
+> **Cline:** "Yes, no, and yes. SB3 consumes whatever scalar `env.step()` returns; a `RewardWrapper` (or `VecEnvWrapper`) overrides the reward before it reaches the algorithm. Rewards are stored as a `float32` array of shape `(buffer_size, n_envs)` and GAE/n-step returns do scalar arithmetic, so reward must be one scalar per step."
+
+**Resolution:** SB3 supports the wrapper architecture natively. Reward must be a single scalar per step, so the wrapper's job is to collapse spikes, potentials, and information gain into one number. Potential-based shaping (γ·Φ(s′) − Φ(s)) lives in the wrapper, which holds the transition across steps.
+
+### "The wrapper is agent-side; info leaks hidden state"
+
+**From the conversation:**
+
+> **You:** "info needed for calculating reward must necessarily carry state that should be hidden from agent." and "i thought the wrapper would be written on the agent side and plugged in."
+
+> ### The Crux
+>
+> **Cline:** "`info` is the wrong channel... the reward wrapper reads true state through the environment object itself, not through the step return. 'Hidden from the agent' means hidden from the policy's input — the observation — not hidden from the reward function."
+
+**Resolution:** true state flows from the environment to the wrapper through the environment object, never through `info` or the observation. `step()` returns perception only. The wrapper is agent-side code, plugged in around the environment.
+
+### "Termination is environment-side"
+
+**From the conversation:**
+
+> **You:** "termination is definitely environment side, and yes i agree with the objective fact loss vs win."
+
+> ### The Crux
+>
+> **Cline:** "`_check_terminated` stays in the environment — it detects the objective game-over (death → `game_mode` FF; win → ring type 0x12) and reports the cause. Only reward leaves. The wrapper assigns the terminal value (-1 / +1)."
+
+**Resolution:** termination detection (the objective game-over fact and its cause) is the environment's job; only its value is the wrapper's. Reward and termination are separate threads.
+
+### "Novelty is layered milestones" → designing the memory
+
+**From the conversation:**
+
+> **You:** "how about the novelty of basic objects? ... how about the novelty of a new door or portal or whatever? ... when it comes to creatures, i guess there's a creature's location, but then there's also creature types you might not have seen before. ... there's also new sounds. i guess that would primarily be creatures."
+
+> ### The Crux
+>
+> **Cline:** "Novelty isn't one flag per domain; it's layered milestones, each with its own identity and worth. The memory is a set of monotonic knowledge milestones, and the reward is new milestones this step, weighted by kind."
+
+**Resolution:** the memory holds milestones across domains — explored cells (weighted by content: door > open > wall), encountered and revealed objects, creature types heard and seen, and creature instances seen. The approach sound is the usual first trigger for the type-heard milestone, because sound reaches farther than sight.
+
+### "Combat novelty decays" → flags vs counters
+
+**From the conversation:**
+
+> **You:** "there's also the novelty of combat... how hard do they hit? how much damage can they take?" and "heard and seen wear off quick, but fought is a kind of novelty that lasts longer because it really takes many fights to learn what this new creature is like."
+
+> ### The Crux
+>
+> **Cline:** "Facts are learned in one exposure (flags, one-shot); skills are learned by repetition (counters, decaying). Combat is a count-based exploration bonus: each kill pays 1/√N per type, where N is the type's kill count."
+
+**Resolution:** the memory has two kinds of entries — one-shot flags (heard, seen, explored, encountered, revealed, instance seen) and a decaying counter (combat, per-type kill count, 1/√N). The kill spike pays every kill; the combat novelty pays the learning and fades as the type becomes familiar.
+

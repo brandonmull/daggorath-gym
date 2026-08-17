@@ -70,7 +70,7 @@ Gate what the player *cannot* know (a creature's hitpoints, a threat around the 
 
 ### The environment owns true state; the observation is sensory.
 
-The environment tracks true state regardless — reward and termination are computed on it, whether or not the agent observes it. Whether a self-state number also appears in the observation is a courtesy, not a necessity; the open question for any such signal is "who is responsible for knowing it — the environment or the agent?"
+The environment holds true state regardless — reward is computed on it by an agent-side wrapper, and termination is reported by the environment — whether or not the agent observes it. Whether a self-state number also appears in the observation is a courtesy, not a necessity; the open question for any such signal is "who is responsible for knowing it — the environment or the agent?"
 
 ### "Cell," not "room."
 
