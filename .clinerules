@@ -12,6 +12,7 @@ Training an RL bot to play Dungeons of Daggorath (1982) in MAME + Gymnasium.
 
 ## Git
 - **Never commit to git** — do not run `git add`, `git commit`, or any git command that modifies the repository. The user handles all git operations.
+- **Commit messages stay terse and conventional** — when suggesting one, give a short summary line and a brief body at most. Do not suggest commit messages that resemble documentation (no bulleted change-lists or long explanatory prose).
 - **SSH key**: `C:\Users\brand\.ssh\personal_github` (copy to `~/.ssh/` for WSL git)
 - **Git remote**: `git@github.com:brandonmull/daggorath-gym.git` (SSH) or HTTPS after `gh auth login`
 

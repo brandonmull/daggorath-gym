@@ -57,7 +57,7 @@
 >
 > **Cline:** "Defer magic-door exposure to the same research, with player-parity as the guide: expose what the player sees."
 
-**Resolution:** magic-door exposure deferred pending research on how they appear and behave; player-parity guides the eventual answer.
+**Resolution:** magic doors differ from normal doors only in rendering — a triangle visible under magic light, a passable wall under a physical-only torch — so the distinction is real but light-gated, and the map exposes the perceived type.
 
 ### Whole map or explored cells?
 
