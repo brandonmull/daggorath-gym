@@ -65,7 +65,7 @@ Traced in the disassembly (`docs/references/game/code.md`):
 ## Unknowns
 
 - **`creatureCounts` semantics.** Kills decrement it. It is not traced whether spawning also decrements it, so it is unclear whether the table means "alive right now" or "still to be placed."
-- **Read atomicity.** Each byte read is atomic, but a 32-slot scan spans many instructions. A creature moving or dying mid-scan could produce a torn snapshot. **Important investigation point** — needs dedicated discussion; a torn snapshot corrupts the exact observation this module exists to deliver.
+- **Read atomicity.** Each byte read is atomic, but a 32-slot scan spans many instructions. A creature moving or dying mid-scan could produce a torn snapshot. **Important investigation point** — a torn snapshot corrupts the exact observation this module exists to deliver. Deferred to `sandbox/read-atomicity/`.
 - **Player death.** On death the game returns to demo mode and hangs; it is not traced what happens to the array or the count table in that state.
 
 ## Decisions
