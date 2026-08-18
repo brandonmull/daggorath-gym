@@ -32,6 +32,8 @@ Verified from the disassembly:
 - Killing type 0x0A (Demon) advances the player to level 4; killing 0x0B (Wizard) flips `evil_wizard_dead`.
 - A kill decrements the creature's type entry in `creatureCounts`, a 12-byte per-type count table pointed to by 0x0282; the table lives at `0x0398 + currentLevel × 12` ("12 bytes each (one byte to count each type of creature)", C75B).
 - The array holds the monsters of the current level (comment at C790) and is rebuilt on level change; at most 32 creatures exist per level, and every five minutes `T4_MakeCreature` (D027) adds one random creature of type 0x02–0x09 — "not spider, snake, demon, or wizard" (D039).
+- Spawning does not decrement `creatureCounts`. The level-spawn loop (C77F–C78E) loads each type's count into B (`LDB A,U`, C783) and calls `CreateCreature` that many times — the `DECB`/`BNE` at C78A–C78B counts down the loop register, not the table, and `CreateCreature` (CFA5) never writes `creatureCounts`. The table is a persistent per-level population register: copied once at boot from ROM `CreaturesOnLevels` (D82C) into 0x0398–0x03D3 by the `InitCopyTable` entry `54 03 80` (D811, "Copy 54 bytes to 380"), read at spawn, decremented on kill (D33E), and incremented by `T4_MakeCreature` (D03B) — so a respawned creature appears only at the next level setup ("Creature is created next time we init the level", D03B).
+- On player death the array and count table are left untouched. The heart-rate update detects `m0221` > `pStrength` (`LDX <pStrength` / `CMPX <m0221` / `BCS $C5B5`, C5AE–C5B2), then beams in the Moon Wizard and prints "YET ANOTHER DOES NOT RETURN" (C5B5–C5CC), flips `gameMode` (0x0277) back to 0xFF demo (`DEC <gameMode`, C5D5), and halts in an endless loop (`BRA $C5D7`). The array (0x03D4–0x05F4) and count table (0x0398–0x03D3) freeze at their death-moment values; the game does not re-enter `PlayDemo`. The 0xFF flag only re-arms the ISR's "any key restarts" path (C303–C316), which jumps to `PlayGame` (C005) to clear and rebuild all RAM.
 - `GetCreatureAt` is called with the player's Y/X, so creature and player coordinates share a grid.
 - Combat is a strength pool versus a damage pool. Each landed hit adds to the defender's pool (creature offset `0x0A`; the player's `m0221` at 0x0221), and death is the damage pool overtaking the strength pool — so hitpoints left = strength - damage. See `docs/findings/combat-model.md`.
 - An unseen creature announces itself by sound: Chebyshev distance ≤ 8, volume 255 - 31×distance, and the sound is the creature's type. The disassembly reads a 2-cell corridor gate, but this is disputed (see `sound/plan.md`). The Seer scroll (`scrollType`, 0x0294) reveals all creatures on the map.
@@ -64,9 +66,7 @@ Traced in the disassembly (`docs/references/game/code.md`):
 
 ## Unknowns
 
-- **`creatureCounts` semantics.** Kills decrement it. It is not traced whether spawning also decrements it, so it is unclear whether the table means "alive right now" or "still to be placed."
 - **Read atomicity.** Each byte read is atomic, but a 32-slot scan spans many instructions. A creature moving or dying mid-scan could produce a torn snapshot. **Important investigation point** — a torn snapshot corrupts the exact observation this module exists to deliver. Deferred to `sandbox/read-atomicity/`.
-- **Player death.** On death the game returns to demo mode and hangs; it is not traced what happens to the array or the count table in that state.
 
 ## Decisions
 
