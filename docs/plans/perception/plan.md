@@ -50,7 +50,7 @@ The observation is a fixed-shape `Dict` of six channels, defined in code as `PER
 - **`objects`** — `Box(8, 3)` uint8: visible floor objects as `specifier`/`X`/`Y`, zero-padded.
 - **`map`** — `Box(32, 32)` uint8: the maze edge bytes.
 
-Only `scalars` is sampled today; the five world channels are zeroed stubs until creatures, objects, and maze land on the wire. The map's exact representation (edge byte vs. one-hot, and how visibility is marked) is still open — see `navigation/plan.md`.
+Only `scalars` is sampled today; the five world channels are zeroed stubs until creatures, objects, and maze land on the wire and the perception gates fill them. The map's representation is settled: the wire carries the raw edge bytes, and the perceived map keeps visible cells' edge bytes while marking unseen cells `0xFF` (see `navigation/plan.md`).
 
 The map is static geometry; the entity tables and the scalars are explicit values. Scalar magnitudes are normalized by a wrapper (e.g. `VecNormalize`) at training time, not baked into the environment.
 

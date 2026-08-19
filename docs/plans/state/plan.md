@@ -199,10 +199,13 @@ The state channel now carries **tagged records** instead of a bare frame. A reco
 | `S` | 21-byte frame | Numeric state changed, screen text unchanged |
 | `T` | 1 byte `comColor` + 1024 pixel bytes | Screen text changed, numeric state unchanged |
 | `B` | 21-byte frame + 1 byte `comColor` + 1024 pixel bytes | Both changed |
+| `M` | 1024-byte maze | The current level's maze edge bytes changed |
+| `C` | 128-byte creature array | A creature slot changed |
+| `O` | 70-byte object record | Hands, pack, or a floor object changed |
 
 This is change detection, not batching. A record in the FIFO means "something meaningful changed." Identical frames are not written at all — replaced by a snapshot comparison in Lua (see §3).
 
-Python maintains the last-known frame and last-known text, so either can be omitted from a record and reconstructed on the other side. The `B` record is the unambiguous case where both changed in the same sampled frame.
+Python maintains the last-known frame and last-known text, so either can be omitted from a record and reconstructed on the other side. The `B` record is the unambiguous case where both changed in the same sampled frame. The three world records follow the same rule — each is written only when its own snapshot differs — and Python keeps the last-known maze, creature array, and object record so the world state reconstructs across records. The world records' layouts live in their modules' plans: the maze in `navigation/plan.md`, the creature array in `creatures/plan.md`, and the object record in `objects/plan.md`.
 
 ### Flyweight Pattern
 

@@ -11,6 +11,9 @@ The state channel carries fixed-size tagged records (no delimiter):
     S  + 21-byte frame                                 state only changed
     T  + 1-byte comColor + 1024 pixel bytes            text only changed
     B  + 21-byte frame + 1-byte comColor + 1024 px     both changed
+    M  + 1024-byte maze                                maze changed
+    C  + 128-byte creature array                       creatures changed
+    O  + 70-byte object record                         objects changed
 """
 
 import os
@@ -24,7 +27,13 @@ from typing import Optional
 from . import commands
 from .paths import PROJECT_PATH, ROM_PATH, HASH_PATH, PLUGINS_PATH
 from .screen import PIXEL_BYTES, decode_command_area
-from .state import FRAME_LEN, DaggorathState
+from .state import (
+    CREATURE_BYTES,
+    FRAME_LEN,
+    MAZE_BYTES,
+    OBJECTS_BYTES,
+    DaggorathState,
+)
 
 
 # Record sizes keyed by the one-byte tag (fixed-size framing, binary-safe).
@@ -32,6 +41,9 @@ _RECORD_LENGTHS = {
     b"S": 1 + FRAME_LEN,
     b"T": 1 + 1 + PIXEL_BYTES,
     b"B": 1 + FRAME_LEN + 1 + PIXEL_BYTES,
+    b"M": 1 + MAZE_BYTES,
+    b"C": 1 + CREATURE_BYTES,
+    b"O": 1 + OBJECTS_BYTES,
 }
 
 # Seconds to wait for the next state record before giving up.
@@ -84,6 +96,9 @@ class MameOperator:
         self._receive_buffer = b""
         self._last_frame: Optional[bytes] = None
         self._last_command_text = ""
+        self._last_maze: Optional[bytes] = None
+        self._last_creatures: Optional[bytes] = None
+        self._last_objects: Optional[bytes] = None
 
     # ---------- lifecycle ----------
 
@@ -154,6 +169,9 @@ class MameOperator:
         self._receive_buffer = b""
         self._last_frame = None
         self._last_command_text = ""
+        self._last_maze = None
+        self._last_creatures = None
+        self._last_objects = None
 
     # ---------- communication ----------
 
@@ -225,11 +243,18 @@ class MameOperator:
         return record
 
     def _parse_record(self, record: bytes) -> DaggorathState:
-        """Parse a tagged record into a DaggorathState carrying current text."""
+        """Parse a tagged record into a DaggorathState carrying current state.
+
+        Each record carries only the channel(s) that changed; the rest are
+        reconstructed from the last-known values.
+        """
         tag = record[0:1]
 
         frame = self._last_frame
         command_text = self._last_command_text
+        maze = self._last_maze
+        creatures = self._last_creatures
+        objects = self._last_objects
 
         if tag in (b"S", b"B"):
             frame = record[1:1 + FRAME_LEN]
@@ -240,12 +265,28 @@ class MameOperator:
             pixels = record[offset + 1:offset + 1 + PIXEL_BYTES]
             command_text = decode_command_area(pixels, com_color)
 
+        if tag == b"M":
+            maze = record[1:1 + MAZE_BYTES]
+        elif tag == b"C":
+            creatures = record[1:1 + CREATURE_BYTES]
+        elif tag == b"O":
+            objects = record[1:1 + OBJECTS_BYTES]
+
         if frame is None:
             raise ConnectionError("Received a record before any numeric state")
 
         self._last_frame = frame
         self._last_command_text = command_text
-        return DaggorathState(frame, command_text=command_text)
+        self._last_maze = maze
+        self._last_creatures = creatures
+        self._last_objects = objects
+        return DaggorathState(
+            frame,
+            command_text=command_text,
+            maze=maze,
+            creatures=creatures,
+            objects=objects,
+        )
 
     def _remove_stale_fifo(self) -> None:
         """Remove a stale FIFO file if it exists."""

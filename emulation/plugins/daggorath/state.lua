@@ -10,6 +10,9 @@
 --   "S" + 21-byte frame                              state only changed
 --   "T" + 1-byte comColor + 1024 pixel bytes         text only changed
 --   "B" + 21-byte frame + 1-byte comColor + 1024 px  both changed
+--   "M" + 1024-byte maze                             maze changed
+--   "C" + 128-byte creature array                    creatures changed
+--   "O" + 70-byte object record                      objects changed
 
 local state = {}
 
@@ -27,6 +30,61 @@ local DISPLAY_LOOK = 0xCE66
 local DISPLAY_EXAMINE = 0xD495
 local TORCH_PTR_HI = 0x0224
 local TORCH_PTR_LO = 0x0225
+
+-- World-channel addresses. The maze, creature array, and object array are
+-- fixed RAM regions; the current level filters floor objects.
+local MAZE_START = 0x05F4
+local CREATURE_ARRAY_START = 0x03D4
+local OBJECT_ARRAY_BASE = 0x0B15
+local NEXT_OBJ_SLOT_HI = 0x020F
+local NEXT_OBJ_SLOT_LO = 0x0210
+local LEFT_HAND_HI = 0x021D
+local LEFT_HAND_LO = 0x021E
+local RIGHT_HAND_HI = 0x021F
+local RIGHT_HAND_LO = 0x0220
+local FIRST_PACK_HI = 0x0229
+local FIRST_PACK_LO = 0x022A
+local CURRENT_LEVEL_ADDR = 0x0281
+
+-- World-channel sizes (the shared wire contract with state.py).
+local MAZE_BYTES = 1024
+local CREATURE_SLOTS = 32
+local CREATURE_SLOT_BYTES = 17
+local CREATURE_FIELDS = 4
+local CREATURE_BYTES = CREATURE_SLOTS * CREATURE_FIELDS
+local OBJECT_SLOT_BYTES = 14
+local OBJECT_RAW_BYTES = 3
+local FLOOR_OBJECT_RAW_BYTES = 5
+local HAND_COUNT = 2
+local PACK_CAPACITY = 8
+local FLOOR_OBJECT_CAPACITY = 8
+local HANDS_BYTES = HAND_COUNT * OBJECT_RAW_BYTES
+local PACK_BYTES = PACK_CAPACITY * OBJECT_RAW_BYTES
+local FLOOR_OBJECTS_BYTES = FLOOR_OBJECT_CAPACITY * FLOOR_OBJECT_RAW_BYTES
+local OBJECTS_BYTES = HANDS_BYTES + PACK_BYTES + FLOOR_OBJECTS_BYTES
+
+-- Creature slot field offsets (17-byte slots).
+local CREATURE_ALIVE_OFFSET = 12
+local CREATURE_TYPE_OFFSET = 13
+local CREATURE_Y_OFFSET = 15
+local CREATURE_X_OFFSET = 16
+
+-- Object slot field offsets (14-byte slots).
+local OBJECT_Y_OFFSET = 2
+local OBJECT_X_OFFSET = 3
+local OBJECT_LEVEL_OFFSET = 4
+local OBJECT_LOCATION_OFFSET = 5
+local OBJECT_PROPER_OFFSET = 9
+local OBJECT_CLASS_OFFSET = 10
+local OBJECT_REVEAL_OFFSET = 11
+
+-- Sentinel class byte marking an empty object slot (real classes are 0-5).
+local OBJECT_SENTINEL = 0xFF
+local EMPTY_OBJECT_IDENTITY = string.char(
+    OBJECT_SENTINEL, OBJECT_SENTINEL, OBJECT_SENTINEL)
+local EMPTY_FLOOR_OBJECT = string.char(
+    OBJECT_SENTINEL, OBJECT_SENTINEL, OBJECT_SENTINEL,
+    OBJECT_SENTINEL, OBJECT_SENTINEL)
 
 -- Schema: ordered array of { name, addr, width } tables. The lit torch's three
 -- fields use { name, torchOffset, width } instead of addr — they are read
@@ -59,6 +117,9 @@ local _frameSamplingRate = 1
 local _stateSnapshot = nil
 local _pixelSnapshot = nil
 local _comColorSnapshot = nil
+local _mazeSnapshot = nil
+local _creatureSnapshot = nil
+local _objectSnapshot = nil
 local _frameSubscription = nil
 
 local function _getMemorySpace()
@@ -131,6 +192,109 @@ local function _readCommandAreaPixels()
     return table.concat(pixels)
 end
 
+-- Read an object's identity bytes (class, proper type, reveal threshold).
+local function _readObjectIdentity(slot)
+    return string.char(
+        _memory:read_u8(slot + OBJECT_CLASS_OFFSET),
+        _memory:read_u8(slot + OBJECT_PROPER_OFFSET),
+        _memory:read_u8(slot + OBJECT_REVEAL_OFFSET))
+end
+
+-- Read an object's next-chain pointer (slot + 0:1, big-endian).
+local function _readObjectNextPointer(slot)
+    return _memory:read_u8(slot) * 256 + _memory:read_u8(slot + 1)
+end
+
+-- Read the maze as a flat 1024-byte string (row-major, one byte per cell).
+local function _sampleMaze()
+    local ok, result = pcall(function()
+        local bytes = {}
+        for offset = 0, MAZE_BYTES - 1 do
+            bytes[#bytes + 1] = string.char(_memory:read_u8(MAZE_START + offset))
+        end
+        return table.concat(bytes)
+    end)
+    if not ok then return nil end
+    return result
+end
+
+-- Read the creature array as a flat 128-byte string: per slot, alive, type,
+-- X, Y (the wire order matches the perceived channel).
+local function _sampleCreatures()
+    local ok, result = pcall(function()
+        local bytes = {}
+        for slot = 0, CREATURE_SLOTS - 1 do
+            local base = CREATURE_ARRAY_START + slot * CREATURE_SLOT_BYTES
+            bytes[#bytes + 1] = string.char(
+                _memory:read_u8(base + CREATURE_ALIVE_OFFSET),
+                _memory:read_u8(base + CREATURE_TYPE_OFFSET),
+                _memory:read_u8(base + CREATURE_X_OFFSET),
+                _memory:read_u8(base + CREATURE_Y_OFFSET))
+        end
+        return table.concat(bytes)
+    end)
+    if not ok then return nil end
+    return result
+end
+
+-- Read the object record: two hands, then the pack, then the floor objects,
+-- each a fixed-capacity sub-array with sentinel-filled empty slots.
+local function _sampleObjects()
+    local ok, result = pcall(function()
+        local bytes = {}
+
+        -- Hands: leftHand and rightHand pointers.
+        local handPointers = {
+            _memory:read_u8(LEFT_HAND_HI) * 256 + _memory:read_u8(LEFT_HAND_LO),
+            _memory:read_u8(RIGHT_HAND_HI) * 256 + _memory:read_u8(RIGHT_HAND_LO),
+        }
+        for _, pointer in ipairs(handPointers) do
+            if pointer == 0 then
+                bytes[#bytes + 1] = EMPTY_OBJECT_IDENTITY
+            else
+                bytes[#bytes + 1] = _readObjectIdentity(pointer)
+            end
+        end
+
+        -- Pack: walk the firstPackObject chain (LIFO).
+        local packPointer = _memory:read_u8(FIRST_PACK_HI) * 256
+            + _memory:read_u8(FIRST_PACK_LO)
+        for _ = 1, PACK_CAPACITY do
+            if packPointer == 0 then
+                bytes[#bytes + 1] = EMPTY_OBJECT_IDENTITY
+            else
+                bytes[#bytes + 1] = _readObjectIdentity(packPointer)
+                packPointer = _readObjectNextPointer(packPointer)
+            end
+        end
+
+        -- Floor: arena scan for location 0 on the current level.
+        local nextObjSlot = _memory:read_u8(NEXT_OBJ_SLOT_HI) * 256
+            + _memory:read_u8(NEXT_OBJ_SLOT_LO)
+        local currentLevel = _memory:read_u8(CURRENT_LEVEL_ADDR)
+        local floorCount = 0
+        local slot = OBJECT_ARRAY_BASE
+        while slot < nextObjSlot and floorCount < FLOOR_OBJECT_CAPACITY do
+            if _memory:read_u8(slot + OBJECT_LOCATION_OFFSET) == 0
+                and _memory:read_u8(slot + OBJECT_LEVEL_OFFSET) == currentLevel then
+                bytes[#bytes + 1] = _readObjectIdentity(slot)
+                bytes[#bytes + 1] = string.char(
+                    _memory:read_u8(slot + OBJECT_X_OFFSET),
+                    _memory:read_u8(slot + OBJECT_Y_OFFSET))
+                floorCount = floorCount + 1
+            end
+            slot = slot + OBJECT_SLOT_BYTES
+        end
+        for _ = floorCount, FLOOR_OBJECT_CAPACITY - 1 do
+            bytes[#bytes + 1] = EMPTY_FLOOR_OBJECT
+        end
+
+        return table.concat(bytes)
+    end)
+    if not ok then return nil end
+    return result
+end
+
 -- Write one tagged record to the FIFO in a single call.
 local function _writeRecord(kind, frame, comColor, pixels)
     local pieces = { kind }
@@ -146,6 +310,17 @@ local function _writeRecord(kind, frame, comColor, pixels)
 
     local ok = pcall(function()
         _stateFile:write(table.concat(pieces))
+        _stateFile:flush()
+    end)
+    if not ok then
+        print("[state] Failed to write record " .. kind)
+    end
+end
+
+-- Write one fixed-size world record to the FIFO in a single call.
+local function _writeWorldRecord(kind, payload)
+    local ok = pcall(function()
+        _stateFile:write(kind .. payload)
         _stateFile:flush()
     end)
     if not ok then
@@ -205,6 +380,26 @@ local function _onFrame()
         _comColorSnapshot = comColor
     end
     -- else: nothing changed — write no record
+
+    -- World channels: maze, creatures, and objects are each compared to their
+    -- own snapshot and written only when they differ.
+    local maze = _sampleMaze()
+    if maze and maze ~= _mazeSnapshot then
+        _writeWorldRecord("M", maze)
+        _mazeSnapshot = maze
+    end
+
+    local creatures = _sampleCreatures()
+    if creatures and creatures ~= _creatureSnapshot then
+        _writeWorldRecord("C", creatures)
+        _creatureSnapshot = creatures
+    end
+
+    local objects = _sampleObjects()
+    if objects and objects ~= _objectSnapshot then
+        _writeWorldRecord("O", objects)
+        _objectSnapshot = objects
+    end
 end
 
 -- Public: start watching game state.
@@ -215,6 +410,9 @@ function state.beginWatching(stateFile, config)
     _stateSnapshot = nil
     _pixelSnapshot = nil
     _comColorSnapshot = nil
+    _mazeSnapshot = nil
+    _creatureSnapshot = nil
+    _objectSnapshot = nil
 
     if config and config.frame_sampling_rate then
         _frameSamplingRate = config.frame_sampling_rate
@@ -232,6 +430,9 @@ function state.onReset()
     _stateSnapshot = nil
     _pixelSnapshot = nil
     _comColorSnapshot = nil
+    _mazeSnapshot = nil
+    _creatureSnapshot = nil
+    _objectSnapshot = nil
 end
 
 return state

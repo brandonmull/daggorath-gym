@@ -28,7 +28,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import daggorath_gym
 importlib.reload(daggorath_gym)
 from daggorath_gym.emulator import MameOperator, IpcConfig
-from daggorath_gym.state import FIELDS, DaggorathState
+from daggorath_gym.state import (
+    CREATURE_FIELDS,
+    CREATURE_SLOTS,
+    FIELDS,
+    FLOOR_OBJECT_CAPACITY,
+    FLOOR_OBJECT_RAW_BYTES,
+    HAND_COUNT,
+    MAP_SIZE,
+    OBJECT_RAW_BYTES,
+    PACK_CAPACITY,
+    DaggorathState,
+)
 
 # Each test gets its own FIFO path to avoid collisions.
 _IPC = IpcConfig(state_fifo_path="/tmp/daggorath-test-emulator", command_port=15101)
@@ -72,5 +83,30 @@ def test_state_as_perceived_shape():
         assert isinstance(perceived, dict)
         assert perceived["scalars"].dtype == np.uint16
         assert len(perceived["scalars"]) == len(FIELDS)
+    finally:
+        operator.stop()
+
+
+def test_world_channels_arrive_and_decode():
+    """M/C/O records arrive from MAME and decode into the true-state attributes."""
+    operator = MameOperator(ipc_config=_IPC)
+    try:
+        operator.start()
+        state = None
+        for _ in range(50):
+            state = operator.recv()
+            if (
+                state.maze is not None
+                and state.creatures is not None
+                and state.hands is not None
+            ):
+                break
+
+        assert state is not None
+        assert state.maze.shape == (MAP_SIZE, MAP_SIZE)
+        assert state.creatures.shape == (CREATURE_SLOTS, CREATURE_FIELDS)
+        assert state.hands.shape == (HAND_COUNT, OBJECT_RAW_BYTES)
+        assert state.pack.shape == (PACK_CAPACITY, OBJECT_RAW_BYTES)
+        assert state.objects.shape == (FLOOR_OBJECT_CAPACITY, FLOOR_OBJECT_RAW_BYTES)
     finally:
         operator.stop()

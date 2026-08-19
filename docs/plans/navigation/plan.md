@@ -45,8 +45,15 @@ The visible set is the corridor plus its **open lateral neighbors**: at each cel
 
 The `−7` offset in the renderer's dot-frequency math cancels out for the binary seen/not-seen boundary, so only `N < light` matters, not solid-vs-dotted. This lateral rule is the POC approximation; `sandbox/line-of-sight/` remains to confirm the renderer's exact geometry.
 
+## Wire
+
+The maze ships raw in one `M` record: the 1024 bytes at 0x05F4 in address order — row-major, cell (Y, X) at `Y * 32 + X` (per `GetCellPointer` CC7B). No unseen marking on the wire; the record is the ground-truth edge bytes, and Python keeps it internally for line-of-sight and reward.
+
+The perceived map — the observation's `map` channel — is the same single-byte-per-cell layout, with one difference: cells outside the visible corridor are marked `0xFF` instead of their edge byte. Rock (`0xFF`) is never in the visible set — the corridor walk only ever includes floor cells, and a rock cell sits behind a wall edge — so `0xFF` unambiguously means "not currently seen," while `0x00` stays reserved for a genuinely all-open cell. A one-hot per-edge encoding was rejected: the wire is already edge bytes, so the perceived map is a masked copy, and one channel keeps the CNN input compact.
+
 ## Decisions
 
+- **Edge bytes on the wire, `0xFF` marks unseen in perception.** The wire carries the raw edge byte per cell; the perceived map keeps visible cells' edge bytes and marks everything else `0xFF`. Rock is never visible, so the marker cannot collide with a drawn cell, and the all-open byte `0x00` stays a legitimate visible value.
 - **Instantaneous visibility, no memory.** The environment reports only the cells visible *now* — the corridor walk's reach — not a persistent explored map. It tracks the full maze internally for line-of-sight and reward, but never accumulates what the player has seen. Map memory is the agent's job, built in a wrapper; walls don't move, so a wrapper's map is reliable — unlike creature memory.
 - **True state vs. perceived state.** Navigation decodes the true maze — the bytes are ground truth, held internally for line-of-sight and reward. The visible corridor is perception, and the two diverge only for magic doors: the byte says "magic door" regardless of light, but the player perceives a triangle only under magic light and a wall under a physical-only torch. So the perception exposes the perceived type (light-gated); the true value stays internal.
 

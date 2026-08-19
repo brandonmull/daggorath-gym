@@ -68,6 +68,8 @@ Traced in the disassembly (`docs/references/game/code.md`):
 
 The environment samples the creature array single-pass each frame, reading four bytes per slot — `alive` (slot + 12), `type` (slot + 13), `Y` (slot + 15), `X` (slot + 16) — across all 32 slots. Strength (slot + 0) and the combat multipliers (slots + 2–5) are not sampled: the player gets no health bar, and the type already encodes the power tier. The scan ships alive + type + position; kill detection and proximity are derived on the Python side from slot transitions and the player's cell.
 
+The four bytes ship in one fixed-size `C` record — 128 bytes, 32 slots in array order — in the order `alive`, `type`, `X`, `Y`, matching the perceived channel. Dead and empty slots zero out the `alive` byte, and Python keys on that byte.
+
 ## Unknowns
 
 - **Read atomicity.** Each byte read is atomic, but a 32-slot scan spans many instructions. The frame notifier runs at the frame boundary while the 6809 is halted, so a single-pass scan is assumed atomic — a torn snapshot would be a one-frame position glitch, noise the agent averages over. `sandbox/read-atomicity/` will confirm.

@@ -48,6 +48,20 @@ HAND_COUNT = 2
 PACK_CAPACITY = 8
 FLOOR_OBJECT_CAPACITY = 8
 
+# World-channel wire sizes. The maze is 32×32 raw edge bytes (row-major); the
+# creature record is 32 slots × 4 fields; the object record is hands + pack +
+# floor objects, each a fixed-capacity sub-array. These are the shared contract
+# with state.lua's world-channel constants.
+MAZE_BYTES = MAP_SIZE * MAP_SIZE
+CREATURE_FIELDS = 4
+CREATURE_BYTES = CREATURE_SLOTS * CREATURE_FIELDS
+OBJECT_RAW_BYTES = 3
+FLOOR_OBJECT_RAW_BYTES = 5
+HANDS_BYTES = HAND_COUNT * OBJECT_RAW_BYTES
+PACK_BYTES = PACK_CAPACITY * OBJECT_RAW_BYTES
+FLOOR_OBJECTS_BYTES = FLOOR_OBJECT_CAPACITY * FLOOR_OBJECT_RAW_BYTES
+OBJECTS_BYTES = HANDS_BYTES + PACK_BYTES + FLOOR_OBJECTS_BYTES
+
 # The perceived state — what the policy sees — is the true state passed
 # through the perception gates (line-of-sight, display mode, light), reported
 # in absolute coordinates; agent-side wrappers translate to relative. Only the
@@ -99,6 +113,44 @@ class DaggorathStateSchema:
 _schema = DaggorathStateSchema()
 
 
+def decode_maze(payload: bytes) -> np.ndarray:
+    """Decode a 1024-byte maze record into a (32, 32) uint8 grid.
+
+    The wire is row-major: cell (Y, X) lives at byte Y * 32 + X, so the
+    reshaped array is indexed as [y][x].
+    """
+    return np.frombuffer(payload, dtype=np.uint8).reshape(MAP_SIZE, MAP_SIZE)
+
+
+def decode_creatures(payload: bytes) -> np.ndarray:
+    """Decode a 128-byte creature record into a (32, 4) uint8 array.
+
+    Each slot is alive, type, X, Y — the wire order matching the perceived
+    channel. Dead and empty slots zero the alive byte.
+    """
+    return np.frombuffer(payload, dtype=np.uint8).reshape(CREATURE_SLOTS, CREATURE_FIELDS)
+
+
+def decode_objects(payload: bytes) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Decode a 70-byte object record into hands, pack, and floor objects.
+
+    Returns three uint8 arrays: hands (2, 3), pack (8, 3), and floor objects
+    (8, 5) — each entry's first byte is the class, with 0xFF marking empty.
+    """
+    hands = np.frombuffer(payload, dtype=np.uint8, count=HANDS_BYTES).reshape(
+        HAND_COUNT, OBJECT_RAW_BYTES
+    )
+    pack_start = HANDS_BYTES
+    pack = np.frombuffer(payload, dtype=np.uint8, count=PACK_BYTES, offset=pack_start).reshape(
+        PACK_CAPACITY, OBJECT_RAW_BYTES
+    )
+    floor_start = HANDS_BYTES + PACK_BYTES
+    floor_objects = np.frombuffer(
+        payload, dtype=np.uint8, count=FLOOR_OBJECTS_BYTES, offset=floor_start
+    ).reshape(FLOOR_OBJECT_CAPACITY, FLOOR_OBJECT_RAW_BYTES)
+    return hands, pack, floor_objects
+
+
 class DaggorathState:
     """Immutable value object holding one meaningful change of game state.
 
@@ -108,11 +160,24 @@ class DaggorathState:
 
     `heart_rate` is a derived attribute (beats per second) computed from
     `heart_beat_interval`; it is not part of the wire format or as_perceived().
+    The world attributes — `maze`, `creatures`, `hands`, `pack`, `objects` —
+    hold the true, ungated state decoded from the M/C/O records, and are None
+    until the corresponding record has arrived.
     """
 
-    __slots__ = tuple(name for name, _, _ in FIELDS) + ("heart_rate", "command_text")
+    __slots__ = (
+        tuple(name for name, _, _ in FIELDS)
+        + ("heart_rate", "command_text", "maze", "creatures", "hands", "pack", "objects")
+    )
 
-    def __init__(self, data: bytes, command_text: str = "") -> None:
+    def __init__(
+        self,
+        data: bytes,
+        command_text: str = "",
+        maze: bytes | None = None,
+        creatures: bytes | None = None,
+        objects: bytes | None = None,
+    ) -> None:
         values = _schema.unpack(data)
         for name, _, _ in FIELDS:
             object.__setattr__(self, name, values[name])
@@ -121,6 +186,20 @@ class DaggorathState:
         object.__setattr__(self, "heart_rate", 0.0 if interval == 0 else 60.0 / interval)
 
         object.__setattr__(self, "command_text", command_text)
+
+        object.__setattr__(self, "maze", decode_maze(maze) if maze is not None else None)
+        object.__setattr__(
+            self, "creatures", decode_creatures(creatures) if creatures is not None else None
+        )
+        if objects is None:
+            object.__setattr__(self, "hands", None)
+            object.__setattr__(self, "pack", None)
+            object.__setattr__(self, "objects", None)
+        else:
+            hands, pack, floor_objects = decode_objects(objects)
+            object.__setattr__(self, "hands", hands)
+            object.__setattr__(self, "pack", pack)
+            object.__setattr__(self, "objects", floor_objects)
 
     def __setattr__(self, name: str, value: object) -> None:
         raise AttributeError(
@@ -132,9 +211,10 @@ class DaggorathState:
 
         The scalars are the sixteen always-present self-fields. The world
         channels (hands, pack, creatures, objects, map) are zeroed stubs —
-        they are not sampled yet, and their zeros must not be read as an
-        empty world. The perception gates (line-of-sight, display mode,
-        light) will fill them once the world channels land on the wire.
+        they are decoded onto the wire but not yet gated, so their zeros must
+        not be read as an empty world. The perception gates (line-of-sight,
+        display mode, light) will fill them once the specifier derivation and
+        the gates land.
         """
         return {
             "scalars": np.array(

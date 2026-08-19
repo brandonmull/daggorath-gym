@@ -10,7 +10,27 @@ inconsistent.
 import numpy as np
 import pytest
 
-from daggorath_gym.state import FIELDS, FRAME_LEN, DaggorathState
+from daggorath_gym.state import (
+    CREATURE_BYTES,
+    CREATURE_FIELDS,
+    CREATURE_SLOTS,
+    FIELDS,
+    FLOOR_OBJECT_CAPACITY,
+    FLOOR_OBJECT_RAW_BYTES,
+    FRAME_LEN,
+    HAND_COUNT,
+    HANDS_BYTES,
+    MAP_SIZE,
+    MAZE_BYTES,
+    OBJECT_RAW_BYTES,
+    OBJECTS_BYTES,
+    PACK_BYTES,
+    PACK_CAPACITY,
+    DaggorathState,
+    decode_creatures,
+    decode_maze,
+    decode_objects,
+)
 
 
 # ---- helpers ---------------------------------------------------------------
@@ -116,3 +136,75 @@ def test_as_perceived():
     assert isinstance(perceived, dict)
     assert perceived["scalars"].dtype == np.uint16
     assert len(perceived["scalars"]) == len(FIELDS)
+
+
+# ---- world-channel decoding -------------------------------------------------
+
+def test_decode_maze_shape_and_orientation():
+    """decode_maze yields a (32, 32) grid, row-major with cell (X, Y) at [y][x]."""
+    payload = bytearray(MAZE_BYTES)
+    payload[3 * MAP_SIZE + 7] = 0xAB  # cell (X=7, Y=3)
+    maze = decode_maze(bytes(payload))
+    assert maze.shape == (MAP_SIZE, MAP_SIZE)
+    assert maze[3][7] == 0xAB
+
+
+def test_decode_creatures_shape_and_order():
+    """decode_creatures yields a (32, 4) array in alive/type/X/Y order."""
+    payload = bytearray(CREATURE_BYTES)
+    payload[0] = 0xFF  # slot 0 alive
+    payload[1] = 0x0B  # slot 0 type (Wizard)
+    payload[2] = 12    # slot 0 X
+    payload[3] = 34    # slot 0 Y
+    creatures = decode_creatures(bytes(payload))
+    assert creatures.shape == (CREATURE_SLOTS, CREATURE_FIELDS)
+    assert creatures[0][0] == 0xFF
+    assert creatures[0][1] == 0x0B
+    assert creatures[0][2] == 12
+    assert creatures[0][3] == 34
+
+
+def test_decode_objects_shapes():
+    """decode_objects yields hands (2, 3), pack (8, 3), and floor (8, 5)."""
+    hands, pack, floor_objects = decode_objects(bytes(OBJECTS_BYTES))
+    assert hands.shape == (HAND_COUNT, OBJECT_RAW_BYTES)
+    assert pack.shape == (PACK_CAPACITY, OBJECT_RAW_BYTES)
+    assert floor_objects.shape == (FLOOR_OBJECT_CAPACITY, FLOOR_OBJECT_RAW_BYTES)
+
+
+def test_decode_objects_layout():
+    """decode_objects splits the record into hands, pack, and floor correctly."""
+    payload = bytearray(OBJECTS_BYTES)
+    floor_start = HANDS_BYTES + PACK_BYTES
+    payload[floor_start] = 0x04  # first floor entry's class (SWORD)
+    payload[floor_start + 3] = 9  # X
+    payload[floor_start + 4] = 5  # Y
+    _hands, _pack, floor_objects = decode_objects(bytes(payload))
+    assert floor_objects[0][0] == 0x04
+    assert floor_objects[0][3] == 9
+    assert floor_objects[0][4] == 5
+
+
+def test_world_channels_are_none_when_absent():
+    """A state without world records reports None for every world channel."""
+    state = DaggorathState(_build_test_frame())
+    assert state.maze is None
+    assert state.creatures is None
+    assert state.hands is None
+    assert state.pack is None
+    assert state.objects is None
+
+
+def test_world_channels_decode_when_present():
+    """A state built from world records exposes the decoded true state."""
+    state = DaggorathState(
+        _build_test_frame(),
+        maze=bytes(MAZE_BYTES),
+        creatures=bytes(CREATURE_BYTES),
+        objects=bytes(OBJECTS_BYTES),
+    )
+    assert state.maze.shape == (MAP_SIZE, MAP_SIZE)
+    assert state.creatures.shape == (CREATURE_SLOTS, CREATURE_FIELDS)
+    assert state.hands.shape == (HAND_COUNT, OBJECT_RAW_BYTES)
+    assert state.pack.shape == (PACK_CAPACITY, OBJECT_RAW_BYTES)
+    assert state.objects.shape == (FLOOR_OBJECT_CAPACITY, FLOOR_OBJECT_RAW_BYTES)
