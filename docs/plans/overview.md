@@ -56,9 +56,15 @@ MAME lets us attach **Lua scripts** that run alongside the emulated machine. The
 - **Change detection, not frame-by-frame** — the state channel emits a record only when something meaningful changes (numeric state or command-area text), not every frame. Identical frames are dropped in Lua against a snapshot.
 - **Flyweight pattern** — shared schema objects on both sides, per-change value objects. Schema defines the contract once; instances are light.
 
-## Observation Principles
+## Perception Principles
 
-These govern what the agent sees — the answer to "what does the player perceive, and how faithfully do we reproduce it."
+These govern what the agent perceives — the answer to "what does the player perceive, and how faithfully do we reproduce it."
+
+### Perception must carry the world.
+
+> Position + heading + body state, with no walls, no creatures, no goal, reduces to a random walk with a sparse death penalty.
+
+Perception has to give the agent something to act on. Self-state alone — position, heading, body — leaves nothing to navigate toward, avoid, or seek: no gradient, no goal, nothing to learn. The trainable core is the *world* (the maze, the creatures, the light) plus self-state. How fairly the agent's access to that world mirrors a real player's is a later curriculum concern, not a prerequisite for the first working environment — act first, fairness later. The discussion lives in [`perception/conversation.md`](perception/conversation.md).
 
 ### Perception vs. proprioception.
 
@@ -124,7 +130,7 @@ The project uses a three-phase documentation pipeline:
 | `docs/plans/sound/plan.md` | Sound — the auditory observation channel |
 | `docs/plans/navigation/plan.md` | Navigation — maze decoding and line-of-sight |
 | `docs/plans/events/plan.md` | Events — the deferred event channel and its candidate catalog |
-| `docs/plans/observation/plan.md` | Observation — how the five channels combine into one array |
+| `docs/plans/perception/plan.md` | Perception — the perceptible state and how the channels combine into one array |
 | `docs/plans/curriculum/plan.md` | Curriculum — staged removal of scaffolding |
 | `docs/reviews/environment.py.md` | environment.py design review (observations, deferred items) |
 | `docs/reviews/emulator.py.md` | emulator.py design review (observations, deferred items) |

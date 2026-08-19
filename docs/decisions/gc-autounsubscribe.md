@@ -55,4 +55,4 @@ module-local Lua variable. Three notifiers are used in the production architectu
 The game becomes command-ready at **frame 725** (~12s after cold boot, ~7s after keyboard priming):
 - Frame 300: auto-prime (two `\r` posted via natkeyboard)
 - Frame 313: gameMode flips from 0xFF (demo) to 0x00 (live)
-- Frame 725: displayFunction settles to 0xCE66 (normal game screen)
+- Frame 725: displayFunction reaches 0xCE66 (normal game screen)

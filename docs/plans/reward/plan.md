@@ -2,7 +2,7 @@
 
 _See [overview.md](../overview.md) for project context and architecture._
 
-This document describes the reward — an agent-side component, separate from the environment, that turns game state into a training signal. It follows the observation principle from the object and creature modules — the agent perceives what the player perceives — and shapes reward from that same state.
+This document describes the reward — an agent-side component, separate from the environment, that turns game state into a training signal. It follows the perception principle from the object and creature modules — the agent perceives what the player perceives — and shapes reward from that same state.
 
 ## Purpose
 
@@ -74,14 +74,14 @@ One-shot, monotonic milestones — each fires once, then is silent. Every key is
 
 | Milestone | Key | Marked known when |
 |-----------|-----|-------------------|
-| Cell explored | `(floor, x, y)` | the cell is in line-of-sight, or a VISION scroll reveals it |
+| Cell explored | `(floor, x, y)` | the cell is in line-of-sight, or a VISION scroll reveals it — the dense *advance* term |
 | Object encountered | object address | the object's location (`slot + 5`) leaves `FF` (monster-held) |
 | Object revealed | object address | the object's strength-to-reveal (`slot + 11`) → 0 |
 | Type heard | creature type token | the type first becomes audible (approach sound) |
 | Type seen | creature type token | the type first becomes visible (line-of-sight) |
 | Instance seen | `(floor, slot)` | a specific creature first becomes visible |
 
-Terrain reward is weighted by what the cell revealed: a door is worth more than open ground, which is worth more than a wall — a passage points to somewhere new to explore. The revealed milestone scales with the object's power, which only the reveal discloses.
+Exploration reward is two-tier. The per-cell milestone is the **advance** term — dense and small, its job is credit assignment over long corridors. The **discovery** term is structural: line-of-sight delivers a corridor's worth of geometry at once, and the salient features — a junction, a door, a dead end (the walk terminating) — are the low-probability, high-surprise observations; a straight corridor cell is predictable, a junction is not, so discovery rewards the first reveal of *features*, not the *count* of cells. *Discovery dominates; advance is small* — discovery alone is too sparse to guide the agent through a corridor, advance alone is cell-counting with no notion of why the map matters. Without either, the minimal reward (survival margin + death) makes standing still optimal: `m0221` doesn't rise if you don't exert, so there is no gradient pulling the agent into the dungeon. The revealed-object milestone scales with the object's power, which only the reveal discloses.
 
 ### Counter
 
@@ -101,9 +101,22 @@ VISION and SEER are bulk triggers over the same memory, not a fourth reward. VIS
 - **Competing signals resolve at the spike.** Combat is low safety (potential) yet leads to strength (potential) and a kill (spike). The two potentials need not out-shout each other — shaping never changes the objective. What matters is that the kill spike outweighs the safety penalty accumulated over the fight, and that it is one-shot, so it teaches "combat pays" without a standing incentive to stay in it.
 - **Information gain is novelty-bounded.** Reward the *first* time a thing becomes known, not every re-look — otherwise the agent stands still and stares at what it already knows.
 
+## Coefficients
+
+The prototype ships with light, reasonable numbers — tunable, not final:
+
+| Signal | Value |
+|---|---|
+| Win | +1.0 |
+| Death | −1.0 |
+| Discovery (new salient feature) | +0.1 |
+| Advance (new cell) | +0.01 |
+| Survival shaping | γ·Φ(s′) − Φ(s), Φ = `player_strength − m0221`, γ = 0.99 |
+
+The scale rule is *terminal ≫ discovery ≫ advance*: terminal events dominate, discovery is a meaningful tenth, advance is a dense hundredth.
+
 ## Open Questions
 
-- **Scaling.** What coefficient per potential, per spike, and per novelty milestone, what decay for the combat counter, and what γ?
 - **Termination coupling.** Loss (death → `game_mode` FF, or `player_strength < m0221`) and the two-stage win straddle reward and termination — where is the boundary?
 
 ## Reference Documents
@@ -113,7 +126,7 @@ VISION and SEER are bulk triggers over the same memory, not a fourth reward. VIS
 | `docs/plans/state/plan.md` | The player fields the potentials draw from |
 | `docs/plans/objects/plan.md` | Object attainment, the reveal field, and the win's second stage |
 | `docs/plans/creatures/plan.md` | The creature array — type tokens, slots, and kill detection |
-| `docs/plans/navigation/plan.md` | Line-of-sight and the explored map the cell milestone draws from |
+| `docs/plans/navigation/plan.md` | Line-of-sight and the visible corridor the cell milestone draws from |
 | `docs/plans/sound/plan.md` | The approach sound that marks the type-heard milestone |
-| `docs/plans/observation/plan.md` | The observation, which carries no novelty flags |
+| `docs/plans/perception/plan.md` | The perception, which carries no novelty flags |
 | `docs/findings/combat-model.md` | The survival margin `player_strength − m0221` |

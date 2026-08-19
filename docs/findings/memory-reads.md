@@ -27,7 +27,7 @@ Two guards make reads safe:
 | Guard | Why |
 |-------|-----|
 | Return while `manager.machine.paused` | MAME can be paused during early frames |
-| Gate on `displayFunction == 0xCE66` before sampling | Skips the demo loop; first true several hundred frames in |
+| Gate on `displayFunction` (`0xCE66` or `0xD495`) before sampling | Skips the demo loop; first true several hundred frames in |
 
 <br>
 

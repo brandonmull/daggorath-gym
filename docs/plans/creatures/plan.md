@@ -64,20 +64,24 @@ Traced in the disassembly (`docs/references/game/code.md`):
 - The level-spawn loop walks the count table from type 0x0B down to 0x00 ("Start with most powerful", C781), matching the strength column (Wizard strongest).
 - The three ROM tables agree on the short names above; the level listings use longer display names (`CLUB GIANT` for Giant, `PLAIN KNIGHT` for Knight).
 
+## Scan
+
+The environment samples the creature array single-pass each frame, reading four bytes per slot — `alive` (slot + 12), `type` (slot + 13), `Y` (slot + 15), `X` (slot + 16) — across all 32 slots. Strength (slot + 0) and the combat multipliers (slots + 2–5) are not sampled: the player gets no health bar, and the type already encodes the power tier. The scan ships alive + type + position; kill detection and proximity are derived on the Python side from slot transitions and the player's cell.
+
 ## Unknowns
 
-- **Read atomicity.** Each byte read is atomic, but a 32-slot scan spans many instructions. A creature moving or dying mid-scan could produce a torn snapshot. **Important investigation point** — a torn snapshot corrupts the exact observation this module exists to deliver. Deferred to `sandbox/read-atomicity/`.
+- **Read atomicity.** Each byte read is atomic, but a 32-slot scan spans many instructions. The frame notifier runs at the frame boundary while the 6809 is halted, so a single-pass scan is assumed atomic — a torn snapshot would be a one-frame position glitch, noise the agent averages over. `sandbox/read-atomicity/` will confirm.
 
 ## Decisions
 
 - **Creatures are needed.** The Safety potential and player-perception both require them; strength-delta alone gives kills, not proximity or type.
 - **Sample the array, not just `creatureCounts`.** Counts have no positions, so no proximity. Sample alive + type + X/Y per slot; the count table is at best a supplement.
-- **Positions, sight-gated.** Positions are the "sight" channel; the sound channel covers what sight can't.
+- **Positions, light-gated.** Positions are the "sight" channel; the sound channel (deferred) covers what sight can't.
 - **Kill detection is typed and frame-rate.** A kill is a slot going alive→dead, and the slot's type is what died. Lua samples every frame, so there's no race; strength-delta is only the aggregate.
 - **No level-switch window.** The level-setup routine zeroes the whole array (`SWI_11` over 0x03D4–0x05F4) and re-spawns — the array is never garbage.
 - **Type and starting strength; withhold current hitpoints.** The player gets no health bar; starting strength (slot + 0) is the power tier, which type already roughly encodes.
-- **Sight-gated positions via line-of-sight.** A creature is "seen" when the navigation module's line-of-sight reaches it; everything else is heard.
-- **No memory of the unseen.** Stale coordinates lie; the sound channel is the game's own "behind me" cue.
+- **Light-gated positions via line-of-sight.** A creature is visible when its cell is within the navigation module's corridor walk (reach `min(light, 10)`); everything else is absent from perception — there is no memory of the unseen.
+- **No memory of the unseen.** Stale coordinates lie — a creature that leaves sight leaves the perception. The sound channel (deferred) is the game's own "behind me" cue.
 - **Sound as proximity.** The sound channel (type + distance, no direction, multi-slot) is the proximity observation for unseen creatures.
 - **Combat is a reward-level interpretation, not a module.** Strikes come from existing signals (`!!!`, alive flags, `m0221`); the event channel (see `events/plan.md`) is deferred.
 

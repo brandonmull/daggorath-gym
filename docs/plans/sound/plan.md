@@ -2,7 +2,7 @@
 
 _See [overview.md](../overview.md) for project context and architecture._
 
-This document records what we know and don't know about the game's sound system, and the open questions that must be answered before any design work begins. It applies the observation principle — the agent perceives what the player perceives — to the ears rather than the eyes.
+This document records what we know and don't know about the game's sound system, and the open questions that must be answered before any design work begins. It applies the perception principle — the agent perceives what the player perceives — to the ears rather than the eyes.
 
 ## Purpose
 
@@ -43,7 +43,7 @@ The key property: the DAC carries a *mixed, transient* waveform. What a player a
 - **Per-sound granularity; three properties.** Each sound carries distance (loudness), sound type (the effect), and source (creature type / object class / player / environment / wizard). Sound conveys *no direction*: the game is mono, so loudness carries distance and nothing carries bearing. Multiple sounds at once must be representable (a fixed-size "nearest N" list).
 - **Sound is the full auditory scene, not just creature proximity.** Creatures aren't the only source — objects (use sounds), the player (hit, heartbeat), the environment (wall hit), and the wizard (beam, strike) all sound too; a creature alone makes more than one sound (approach, dying).
 - **The sound→source association is a curriculum item.** The source is exposed alongside each sound for now; in a later stage it's removed, so the agent learns to associate sound with source itself.
-- **Sound answers the creature module's "sound as proximity."** For unseen creatures, the auditory channel (distance + sound type + source) is the proximity observation, alongside sight-gated positions for seen creatures.
+- **Sound answers the creature module's "sound as proximity."** For unseen creatures, the auditory channel (distance + sound type + source) is the proximity perception, alongside light-gated positions for seen creatures.
 
 ## Reference Documents
 

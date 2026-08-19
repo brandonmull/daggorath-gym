@@ -101,6 +101,7 @@ All addresses were verified against the authoritative memory map ([`ram.md`](../
 | `at_cell_y` | 1 | Spatial | Grid row |
 | `at_heading` | 1 | Spatial | Facing direction |
 | `ambient_light` | 2 | World | Base dungeon illumination (u16, spikes when wizard dies) |
+| `effective_light` | 2 | World | The renderer's computed light level — `ambient_light` + lit-torch illumination; drives the sight reach (u16) |
 | `player_weight` | 2 | Body | Strain from carried items (u16) |
 | `player_strength` | 2 | Body | Grows with combat victories (u16) |
 | `m0221` | 2 | Body | Damage pool in combat — each landed hit adds to it; death when it exceeds `player_strength` (u16) |
@@ -131,7 +132,7 @@ Fields use semantic prefixes to group related concepts:
 | `player_` | `player_weight`, `player_strength`, `player_fainting` | Physical attributes |
 | `heart_` | `heart_beat_interval` | Heartbeat mechanics |
 | `evil_` | `evil_wizard_dead` | Enemy state |
-| _(bare)_ | `game_mode`, `ambient_light`, `m0221` | No semantic prefix |
+| _(bare)_ | `game_mode`, `ambient_light`, `effective_light`, `m0221` | No semantic prefix |
 
 Lua uses camelCase (`heartBeatInterval`), Python uses snake_case (`heart_beat_interval`). The names don't appear on the wire — only the byte order matters — so each side uses the convention appropriate for its language.
 
@@ -172,16 +173,16 @@ The order is the contract. If the two sides fall out of sync, all values shift a
 
 The previous system built a JSON string for each observation — about **250 bytes** of text, of which only ~10 were actual game data. On the emulated 6809 CPU running at ~0.89 MHz, string formatting eats into the frame budget.
 
-**Raw bytes** invert this: we send just the values in schema order. Sixteen bytes carry all twelve fields. The Lua side writes with simple `string.char()` calls — near-zero CPU cost. The Python side reads a byte string and hands it to the schema for deserialization.
+**Raw bytes** invert this: we send just the values in schema order. Eighteen bytes carry all thirteen fields. The Lua side writes with simple `string.char()` calls — near-zero CPU cost. The Python side reads a byte string and hands it to the schema for deserialization.
 
 ```
-[00] [01] [16] [0C] [02] [2A] [00] [23] [17] [A0] [50] [07] [00] [16] [00] [00]
-  ↑     ↑     ↑    ↑    ↑    ↑    ↑     ↑    ↑     ↑     ↑    ↑    ↑    ↑    ↑    ↑
-game  at   at    at   at   ambi ambi plyr  plyr  plyr  plyr m0221 m0221 heart plyr  evil
-mode  floor cellX cellY head LgtHi LgtLo WgtHi WgtLo StrHi StrLo   Hi    Lo  Inter faint WizDed
+[00] [01] [16] [0C] [02] [2A] [00] [00] [13] [23] [17] [A0] [50] [07] [00] [16] [00] [00]
+  ↑     ↑     ↑    ↑    ↑    ↑    ↑    ↑    ↑    ↑     ↑    ↑    ↑    ↑    ↑    ↑    ↑    ↑
+game  at   at    at   at   ambi ambi eff  eff  plyr plyr plyr plyr m0221 m0221 heart plyr evil
+mode  floor cellX cellY head LgtHi LgtLo LgtHi LgtLo WgtHi WgtLo StrHi StrLo  Hi    Lo  Inter faint WizDed
 ```
 
-Four fields are u16 (two bytes each: `ambient_light`, `player_weight`, `player_strength`, `m0221`); the remaining eight are u8.
+Five fields are u16 (two bytes each: `ambient_light`, `effective_light`, `player_weight`, `player_strength`, `m0221`); the remaining eight are u8.
 
 ### The Tracked Wire Record
 
@@ -189,9 +190,9 @@ The state channel now carries **tagged records** instead of a bare frame. A reco
 
 | Kind | Payload | Meaning |
 |------|---------|---------|
-| `S` | 16-byte frame | Numeric state changed, screen text unchanged |
+| `S` | 18-byte frame | Numeric state changed, screen text unchanged |
 | `T` | 1 byte `comColor` + 1024 pixel bytes | Screen text changed, numeric state unchanged |
-| `B` | 16-byte frame + 1 byte `comColor` + 1024 pixel bytes | Both changed |
+| `B` | 18-byte frame + 1 byte `comColor` + 1024 pixel bytes | Both changed |
 
 This is change detection, not batching. A record in the FIFO means "something meaningful changed." Identical frames are not written at all — replaced by a snapshot comparison in Lua (see §3).
 
@@ -318,7 +319,7 @@ Testing happens at two levels:
 - `unpack()` with known test bytes → correct typed dict
 - `DaggorathState(raw)` construction → attribute access via `__slots__`
 - `DaggorathState` immutability (`__setattr__` raises `AttributeError`)
-- `to_array()` → correct numpy shape (12,) and uint16 dtype
+- `to_array()` → correct numpy shape (13,) and uint16 dtype
 - `heart_rate` derivation → `60 / interval`, and 0 when the interval is zero
 - Record dispatch → `S`, `T`, and `B` kinds each route correctly
 
@@ -332,7 +333,7 @@ Testing happens at two levels:
 
 `state.beginWatching(stateFile, config)` is the entry point.
 
-The schema is a constant named `SCHEMA` — an ordered array of `{ name, addr, width }` tables (12 entries, listed in §1). The byte order is the shared contract with `DaggorathStateSchema.FIELDS` in Python.
+The schema is a constant named `SCHEMA` — an ordered array of `{ name, addr, width }` tables (13 entries, listed in §1). The byte order is the shared contract with `DaggorathStateSchema.FIELDS` in Python.
 
 ```
 state.beginWatching(stateFile, config)
@@ -345,8 +346,8 @@ per-frame notifier:
     → increments the frame counter
     → lazy-acquires the CPU memory space on first sampled frame
     → skips if the frame isn't a multiple of the sampling rate
-    → reads 12 RAM addresses as u8 or two-byte u16 little-endian
-    → concatenates values into a 16-byte raw frame with string.char()
+    → reads 13 RAM addresses as u8 or two-byte u16 little-endian
+    → concatenates values into a 18-byte raw frame with string.char()
     → reads the command-area pixel block and comColor
     → compares frame and pixels to their snapshots
     → writes an S / T / B tagged record (via pcall)
@@ -357,7 +358,7 @@ per-frame notifier:
 
 Two classes: `DaggorathStateSchema` (flyweight) and `DaggorathState` (immutable value object).
 
-The field definitions are a class attribute named `FIELDS` — a tuple of `(name, offset, width)` 3-tuples in the same order as Lua's `SCHEMA`. No dataclass wrapper. `FRAME_LEN` is 16 (8 u8 + 4 u16 fields).
+The field definitions are a class attribute named `FIELDS` — a tuple of `(name, offset, width)` 3-tuples in the same order as Lua's `SCHEMA`. No dataclass wrapper. `FRAME_LEN` is 18 (8 u8 + 5 u16 fields).
 
 ```
 _schema.unpack(data)
@@ -374,7 +375,7 @@ DaggorathState(data)
     → after construction, __setattr__ raises AttributeError (immutable)
 
 to_array()
-    → returns a uint16 numpy array of the 12 raw fields
+    → returns a uint16 numpy array of the 13 raw fields
 ```
 
 ## Reference Documents

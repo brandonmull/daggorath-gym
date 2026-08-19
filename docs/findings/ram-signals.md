@@ -7,7 +7,7 @@
 > The safe pattern for every read:
 >
 > 1. Return immediately while `manager.machine.paused` is true.
-> 2. Gate on the readiness signal itself — **displayFunction** (`0x02B2–0x02B3`) — and check it **before** touching any other RAM. Only when it equals `0xCE66` (live play) is the rest of the map safe.
+> 2. Gate on the readiness signal itself — **displayFunction** (`0x02B2–0x02B3`) — and check it **before** touching any other RAM. Only when it is `0xCE66` or `0xD495` (live play — the dungeon or the inventory view) is the rest of the map safe.
 > 3. Never sample state first and gate afterward — sampling is itself a read, and doing it before the gate is the crash.
 >
 > This is why the readiness gate sits *above* the state schema in the frame handler, not below it.
@@ -20,16 +20,17 @@ Project-wide catalog of RAM addresses with known behavior. Each entry is headed 
 
 ## How do I know the game is ready for commands?
 
-**displayFunction** at `0x02B2–0x02B3`. A 16-bit pointer to the game's active screen-drawing routine. This is the primary readiness gate: once it hits `0xCE66`, the normal playing screen is active and the command area is visible.
+**displayFunction** at `0x02B2–0x02B3`. A 16-bit pointer to the game's active screen-drawing routine. This is the primary readiness gate: once it hits `0xCE66` (or `0xD495`), a live-play screen is active and the command area is visible.
 
 Read as big-endian: `byte_at_0x02B2 * 256 + byte_at_0x02B3`.
 
 | Value | Meaning |
 |-------|---------|
 | 0x0000 | Demo loop — game is playing canned input, screen redrawing is disabled or redirected |
-| 0xCE66 | Live play — normal playing screen is active (3D view, status bar, command area) |
+| 0xCE66 | Live play — the dungeon view (LOOK): the normal playing screen (3D view, status bar, command area) |
+| 0xD495 | Live play — the inventory view (EXAMINE) |
 
-The transition from 0x0000 to 0xCE66 happens when the game exits the demo loop, regardless of how that exit is triggered (keyboard priming, clicking the MAME window, or any future automation). Once the value becomes 0xCE66, it stays there for the remainder of the session.
+The transition from 0x0000 happens when the game exits the demo loop, regardless of how that exit is triggered (keyboard priming, clicking the MAME window, or any future automation). It never returns to 0x0000; in live play it moves between `0xCE66` (LOOK, set by `CmdLOOK` at C751) and `0xD495` (EXAMINE, set by `CmdEXAMINE` at D481) as the player switches views.
 
 
 <br>

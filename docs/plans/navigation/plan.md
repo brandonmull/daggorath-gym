@@ -33,15 +33,22 @@ Verified from the disassembly:
 - Both door kinds block sight — the corridor walk (`CF24`) stops at any non-open facing edge, so normal door, magic door, and wall occlude alike.
 - Normal and magic doors differ only in rendering. A normal door draws a rectangle on the physical-light channel, visible in any light. A magic door draws a triangle on the magic-light channel (`m0275` → `SWI_0` reads `m026F`) plus the wall behind it, so under a physical-only torch (Pine, magic light 0) it looks like a wall yet is passable, and under magic light (Lunar 4 / Solar 11) it shows as a triangle.
 
-## Unknowns
+## Line-of-sight
 
-- **Line-of-sight extent.** How far the 3D view renders down a corridor under a given light level is not traced — it sets the sight-gate's reach. Deferred to a sandbox/trace. This is a *separate experiment* from the sound module's corridor gate — its own sandbox subfolder.
+The sight-gate's reach is a corridor walk mirroring the 3D renderer (`NormalDisplay`, `CE66`):
+
+- The renderer walks the **facing corridor** from the player's cell, depths `0…9`, stopping at the first facing edge that isn't open (normal door, magic door, and wall all occlude alike).
+- A cell at depth `N` is drawn — and therefore seen — while `N < light`, where `light` is the effective light level `effective_light` (`m026E:m026F`).
+- So reach = `min(light, 10)`, and `light == 0` means nothing is visible — pure blackout.
+
+The visible set is the corridor plus its **open lateral neighbors**: at each cell on the walk, the two cells perpendicular to the facing direction are included only when the connecting edge is open (value `00`). A 2-cell-wide hall is seen; a door — normal or magic, both of which block sight — hides what lies beyond it, and a wall (value `11`) does too. This is one step laterally, not a flood-fill.
+
+The `−7` offset in the renderer's dot-frequency math cancels out for the binary seen/not-seen boundary, so only `N < light` matters, not solid-vs-dotted. This lateral rule is the POC approximation; `sandbox/line-of-sight/` remains to confirm the renderer's exact geometry.
 
 ## Decisions
 
-- **Explored-with-memory.** The observation exposes cells the player has seen (a persistent map), not the full maze. The environment tracks the full maze internally (for line-of-sight and reward). Map memory is reliable — walls don't move — unlike creature memory.
-- **Map memory is scaffolding.** Building a map is conceptually the player's (hence the agent's) job; the environment providing it is a training convenience, removed in a later curriculum stage so a recurrent agent maintains its own map.
-- **True state vs. perceived state.** Navigation decodes the true maze — the bytes are ground truth, held internally for line-of-sight and reward. The explored map is perception, and the two diverge only for magic doors: the byte says "magic door" regardless of light, but the player perceives a triangle only under magic light and a wall under a physical-only torch. So the map exposes the perceived type (light-gated); the true value stays internal.
+- **Instantaneous visibility, no memory.** The environment reports only the cells visible *now* — the corridor walk's reach — not a persistent explored map. It tracks the full maze internally for line-of-sight and reward, but never accumulates what the player has seen. Map memory is the agent's job, built in a wrapper; walls don't move, so a wrapper's map is reliable — unlike creature memory.
+- **True state vs. perceived state.** Navigation decodes the true maze — the bytes are ground truth, held internally for line-of-sight and reward. The visible corridor is perception, and the two diverge only for magic doors: the byte says "magic door" regardless of light, but the player perceives a triangle only under magic light and a wall under a physical-only torch. So the perception exposes the perceived type (light-gated); the true value stays internal.
 
 ## Reference Documents
 

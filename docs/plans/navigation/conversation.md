@@ -70,3 +70,15 @@
 > **Cline:** "Explored-with-memory — but the memory is scaffolding. Map-building is conceptually the agent's job; the environment provides it now and the curriculum removes it later."
 
 **Resolution:** explored-with-memory; the map memory is a curriculum item (environment scaffolding, removed when the agent learns to maintain its own map).
+
+### "Corridor width"
+
+**From the conversation:**
+
+> **You:** "regarding line-of-sight, include lateral neighbors in open halls, not through doors."
+
+**The recap:**
+
+> The visible set is the facing corridor plus its open lateral neighbors. At each cell on the walk, the two cells perpendicular to the facing direction are included only when the connecting edge is open — a 2-cell-wide hall is seen. A door (normal or magic) blocks sight, so a lateral door hides what lies beyond it; a wall does too. This is one step laterally, not a flood-fill. It settles the "How far does sight reach?" thread's deferred reach: the forward reach is `min(light, 10)`, and the width is the open lateral neighbor — the POC approximation, with the sandbox left to confirm the renderer's exact geometry.
+
+**Resolution:** the visible set is the corridor walk plus open lateral neighbors — through open edges only, never doors or walls.

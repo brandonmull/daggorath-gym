@@ -186,3 +186,35 @@
 
 **Resolution:** the memory has two kinds of entries — one-shot flags (heard, seen, explored, encountered, revealed, instance seen) and a decaying counter (combat, per-type kill count, 1/√N). The kill spike pays every kill; the combat novelty pays the learning and fades as the type becomes familiar.
 
+### "Advance vs. discovery"
+
+**From the conversation:**
+
+> **You:** "i think the 'cell' centric view of the novelty flag for exploration is the wrong one. line-of-sight provides a host of information about the map altogether. moving into a new cell is logically good as reward because it means moving and can help push the agent along one step at a time, but the larger information gain of the map structure is much more significant."
+
+**The recap:**
+
+> Two different rewards, two different jobs. **Per-cell "advance"** — moving into a new cell pays a little. This is a *locomotion* signal: dense, small, its job is credit assignment over long corridors. "You're making progress, keep going." It's not really about information at all. **Structural discovery** — line-of-sight delivers a corridor's worth of geometry *at once*: the walk's extent, its termination, the branches off it. That's the information gain, and it's fundamentally *holistic*, not cell-wise.
+>
+> The point is clean: a straight corridor cell is predictable — once you've seen one, you've seen them all, so each new one conveys almost no surprise. A **junction** (three exits instead of two), a **door**, a **dead end** (the walk terminating) — those are the low-probability, high-surprise observations. That's where the information actually lives. So the info-gain term should credit *salient features discovered*, not *cells counted*.
+>
+> What line-of-sight can actually extract: (1) **termination type** — did this view end in a wall (dead end), a door, or run out of light (continues beyond sight); (2) **lateral exits / junctions** — a cell along the walk with an open edge perpendicular to the path is a branch; (3) **door and wall placements** — the map's decision points and its boundaries.
+>
+> The shape: **advance (dense, small)** — each newly-entered cell pays a trickle, keeping the agent moving; **discovery (sparse, large)** — each newly-revealed salient feature pays. *Discovery dominates; advance is small.* If discovery is the only term, the reward is too sparse to guide the agent through a ten-cell corridor. If advance is the only term, you're back to cell-counting with no notion of *why* the map matters.
+>
+> Why it's a big one: with the minimal reward (survival margin + death penalty), the *optimal* policy is to stand still. `m0221` doesn't rise if you don't exert, so the margin stays high — no risk, no death, steady reward. There's no gradient pulling the agent into the dungeon at all.
+
+**Resolution:** exploration reward is two-tier — a dense per-cell *advance* term for locomotion, and a sparse structural *discovery* term for salient features (junctions, doors, dead ends, corridor terminations); both novelty-bounded in the reward wrapper, discovery dominating.
+
+### "Light coefficients"
+
+**From the conversation:**
+
+> **You:** "for reward coefficients, we should apply some light, reasonable thinking and get this thing out the door."
+
+**The recap:**
+
+> The scale rule is *terminal ≫ discovery ≫ advance*. Terminal events (±1) are the goal and must dominate. Discovery — a newly revealed salient feature (junction, door, dead end) — is a meaningful tenth (+0.1): sparse and structural, worth real value. Advance — each newly entered cell — is a dense hundredth (+0.01): a trickle of locomotion credit, not real information. Survival shaping is potential-based (γ·Φ(s′) − Φ(s), Φ = `player_strength − m0221`, γ = 0.99), so it densifies the signal without changing the objective. The numbers are light, reasonable, and tunable — not final.
+
+**Resolution:** win +1.0, death −1.0, discovery +0.1, advance +0.01, survival γ·Φ(s′) − Φ(s) with γ = 0.99.
+

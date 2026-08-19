@@ -52,12 +52,16 @@ Verified from the disassembly:
 - **Ring catalogue.** Each placed ring carries 3 strikes (slot + 6) and a hidden incantation word (slot + 7) from `ObjectSpecial` (DA64). `CmdINCANT` (D5BC) matches a typed word against slot + 7 and, on a hit, writes it to slot + 9 and reloads the descriptor (D5D8–D5E9): SUPREME (00) is incanted with FINAL (12) and wins the game; JOULE (01) → ENERGY (13), RIME (06) → ICE (14), VULCAN (0C) → FIRE (15), the three combat rings carrying magic/physical power FF FF from `ObjectData` (DA4C–DA54). Each attack with a powered ring (types 13–15) decrements the strike count, and at zero the ring degrades to GOLD (16) (D2E2–D2F4) — GOLD is never placed, only produced as the spent-ring residue.
 - **Shield defense is a damage multiplier — and fixed in our ROM.** A shield's magic defense (slot + 6) and physical defense (slot + 7) are fractions of incoming damage where 0x80 = 1.0 and 0x40 = 0.5, taken from `ObjectSpecial` (DA6C/DA78/DA88); combat multiplies incoming hits by them at D40C, the held shield feeding `m021A`/`m021C` at D07A–D087 with an 0x80/0x80 default. The original ROM stores leather and bronze swapped — magic 0x6C/0x60, physical 0x80 — the bug `code.md` documents. The ROM we run is Aaron Oliver's Shield Fix (CRC `c985282a`), which exchanges those two bytes at DA78 (`0B 80 60 00`) and DA88 (`10 80 6C 00`) — ROM file offsets 0x1A78/0x1A88, the only divergence from the disassembly across `ObjectData`/`ObjectSpecial`/`ObjectDist` — so the live factors are bronze taking 75% and leather 84% of physical damage with no magic protection; mithril is 50% of both either way.
 
+## Scan
+
+The environment samples objects by walking the pointer chains: `leftHand` and `rightHand` give the two held objects, `firstPackObject` walks the pack, `torchPtr` gives the lit torch. Each object is reported as its class (slot + 10) plus, when revealed, its proper type (slot + 9) — reveal is the strength-to-reveal field (slot + 11) being 0. Floor objects — location (slot + 5) is 0 and the cell is the player's — are gated by light like the rest of the dungeon. Monster-held objects (location FF) stay hidden. The lit torch's minutes (slot + 6) are self-state, exposed at full precision.
+
 ## Decisions
 
-Observation mirrors what the player perceives:
+Perception mirrors what the player perceives:
 
 - Objects are needed, and all of them matter — torches, swords, shields, rings, scrolls, flasks.
-- Both hands are visible on the status line, and the inventory is visible via EXAMINE, so the agent gets both.
+- Hands are visible on the status line (always); the pack is visible via EXAMINE; floor objects are visible in LOOK while the torch is lit. The three follow the perception module's mode + light gates.
 - **Class until revealed.** An object's proper name and true powers appear only after the reveal event (slot + 11 → 0) — before that the object genuinely acts as its base class. The strength-to-reveal threshold is exposed for now and removed in a later curriculum stage, the same pattern as strength.
 - **Torch minutes are self-state.** The torch's remaining minutes (slot + 6 of the lit torch) are exposed at full precision — the player tracks torch life via dimming, and the reward's sight potential needs the minutes, not `ambient_light` (which jumps on the Wizard's death). Not curriculum-removable.
 - **Monster-held objects stay hidden.** What a creature carries is not exposed — it's truly hidden until the creature dies and drops it, at which point the agent sees it on the floor.

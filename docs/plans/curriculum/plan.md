@@ -15,7 +15,7 @@ Four curriculum items exist, each "exposed now, removed later":
 - **Strength.** The player's exact strength number is exposed now as a training accelerant; a later stage removes it so the agent learns its own body. See the strength controversy in `state/conversation.md`.
 - **Reveal threshold.** An object's strength-to-reveal is exposed now; a later stage removes it, following the same pattern as strength. See `objects/plan.md`.
 - **Sound→source association.** Each sound carries its source now; a later stage removes the source so the agent learns to associate sound with source itself. See `sound/plan.md`.
-- **Map memory.** The explored map is provided now as environment scaffolding; a later stage removes it so a recurrent agent maintains its own map. See `navigation/plan.md`.
+- **Map memory.** Memory is wrapper-side, not environment-side: the agent builds its own explored map in a wrapper from day one. A later stage removes the wrapper's memory so a recurrent agent maintains the map itself. See `navigation/plan.md`.
 
 ## Open Questions
 
@@ -32,4 +32,4 @@ The curriculum's structure, recorded as options and deferred to later sessions:
 | `docs/plans/state/conversation.md` | The strength controversy — expose now, remove later |
 | `docs/plans/objects/plan.md` | The reveal threshold, following the strength pattern |
 | `docs/plans/sound/plan.md` | The sound→source association as a curriculum item |
-| `docs/plans/navigation/plan.md` | Map memory as environment scaffolding |
+| `docs/plans/navigation/plan.md` | Map memory as wrapper-side scaffolding |
