@@ -7,9 +7,9 @@
 --   config: { frame_sampling_rate = N } (default: 1 = every frame)
 --
 -- Wire format (fixed-size, no delimiter — the pixel payload is binary):
---   "S" + 14-byte frame                              state only changed
+--   "S" + 21-byte frame                              state only changed
 --   "T" + 1-byte comColor + 1024 pixel bytes         text only changed
---   "B" + 14-byte frame + 1-byte comColor + 1024 px  both changed
+--   "B" + 21-byte frame + 1-byte comColor + 1024 px  both changed
 
 local state = {}
 
@@ -23,9 +23,14 @@ local COM_START_LO = 0x0391
 local COM_COLOR = 0x0396
 local DISPLAY_FN_HI = 0x02B2
 local DISPLAY_FN_LO = 0x02B3
-local DISPLAY_LIVE = 0xCE66
+local DISPLAY_LOOK = 0xCE66
+local DISPLAY_EXAMINE = 0xD495
+local TORCH_PTR_HI = 0x0224
+local TORCH_PTR_LO = 0x0225
 
--- Schema: ordered array of { name, addr, width } tables.
+-- Schema: ordered array of { name, addr, width } tables. The lit torch's three
+-- fields use { name, torchOffset, width } instead of addr — they are read
+-- through torchPtr, the game's pointer to the lit torch (0 = none lit).
 -- The byte order is the shared contract with DaggorathStateSchema.FIELDS in Python.
 local SCHEMA = {
     { name = "gameMode",             addr = 0x0277, width = 1 },
@@ -34,8 +39,13 @@ local SCHEMA = {
     { name = "atCellY",              addr = 0x0213, width = 1 },
     { name = "atHeading",            addr = 0x0223, width = 1 },
     { name = "ambientLight",         addr = 0x0226, width = 2 },
+    { name = "effectiveLight",       addr = 0x026E, width = 2 },
+    { name = "torchMinutes",         torchOffset = 6,  width = 1 },
+    { name = "torchPhysicalLight",   torchOffset = 7,  width = 1 },
+    { name = "torchMagicLight",      torchOffset = 8,  width = 1 },
     { name = "playerWeight",         addr = 0x0215, width = 2 },
     { name = "playerStrength",       addr = 0x0217, width = 2 },
+    { name = "m0221",                addr = 0x0221, width = 2 },
     { name = "heartBeatInterval",    addr = 0x02AF, width = 1 },
     { name = "playerFainting",       addr = 0x0228, width = 1 },
     { name = "evilWizardDead",       addr = 0x022B, width = 1 },
@@ -66,18 +76,28 @@ local function _getMemorySpace()
 end
 
 local function _isLive()
-    local hi = _memory:read_u8(DISPLAY_FN_HI)
-    local lo = _memory:read_u8(DISPLAY_FN_LO)
-    return (hi * 256 + lo == DISPLAY_LIVE)
+    local fn = _memory:read_u8(DISPLAY_FN_HI) * 256 + _memory:read_u8(DISPLAY_FN_LO)
+    return fn == DISPLAY_LOOK or fn == DISPLAY_EXAMINE
 end
 
--- Read all fields and serialize as a 14-byte string. Returns nil if any read
+-- Read all fields and serialize as a 21-byte string. Returns nil if any read
 -- fails, so the caller can skip the frame instead of crashing.
 local function _sampleState()
     local ok, result = pcall(function()
+        -- Resolve the lit torch once: torchPtr is 0 when no torch is lit, in
+        -- which case every torch field reports 0.
+        local torchBase = _memory:read_u8(TORCH_PTR_HI) * 256
+            + _memory:read_u8(TORCH_PTR_LO)
+
         local raw = {}
         for _, field in ipairs(SCHEMA) do
-            if field.width == 2 then
+            if field.torchOffset then
+                local value = 0
+                if torchBase ~= 0 then
+                    value = _memory:read_u8(torchBase + field.torchOffset)
+                end
+                raw[#raw + 1] = string.char(value)
+            elseif field.width == 2 then
                 -- 6809 is big-endian (MSB at addr, LSB at addr+1).
                 -- Wire format is little-endian: LSB first, then MSB.
                 local lo = _memory:read_u8(field.addr + 1)
@@ -153,7 +173,7 @@ local function _onFrame()
         return
     end
 
-    -- Readiness gate: only sample once the game is in live play.
+    -- Readiness gate: only sample during live play (LOOK or EXAMINE).
     if not _isLive() then
         return
     end

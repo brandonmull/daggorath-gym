@@ -6,14 +6,14 @@ import numpy as np
 
 from .emulator import MameOperator, IpcConfig
 from .commands import DaggorathCommand, NUM_COMMANDS
-from .state import NUM_FIELDS
+from .state import PERCEIVED_SPACE
 
 
 class DaggorathEnv(gym.Env):
     """A Gymnasium environment that wraps Dungeons of Daggorath via MAME.
 
     Action space: Discrete(154) — one index per valid command phrase.
-    Observation space: Box(11, uint16) — raw game state fields from RAM.
+    Observation space: Dict — the perceived state (scalars + world channels).
     Lifecycle: owns a MameOperator; creates it on reset(), stops on close().
     Status: reward and termination raise NotImplementedError (awaiting design).
     """
@@ -27,10 +27,8 @@ class DaggorathEnv(gym.Env):
         # Action space: 154 discrete game commands
         self.action_space = spaces.Discrete(NUM_COMMANDS)
 
-        # Observation space: numeric state fields as uint16
-        self.observation_space = spaces.Box(
-            low=0, high=65535, shape=(NUM_FIELDS,), dtype=np.uint16
-        )
+        # Observation space: the perceived state (scalars + gated world channels)
+        self.observation_space = PERCEIVED_SPACE
 
         self._emulator: MameOperator | None = None
 
@@ -62,7 +60,7 @@ class DaggorathEnv(gym.Env):
         if seed is not None:
             info["seed"] = seed
 
-        return state.to_array(), info
+        return state.as_perceived(), info
 
     def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
         # Send command to MAME
@@ -76,7 +74,7 @@ class DaggorathEnv(gym.Env):
         terminated = self._check_terminated(state)
         truncated = self._check_truncated(state)
 
-        return state.to_array(), reward, terminated, truncated, {}
+        return state.as_perceived(), reward, terminated, truncated, {}
 
     def close(self):
         if self._emulator is not None:

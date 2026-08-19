@@ -102,12 +102,17 @@ All addresses were verified against the authoritative memory map ([`ram.md`](../
 | `at_heading` | 1 | Spatial | Facing direction |
 | `ambient_light` | 2 | World | Base dungeon illumination (u16, spikes when wizard dies) |
 | `effective_light` | 2 | World | The renderer's computed light level — `ambient_light` + lit-torch illumination; drives the sight reach (u16) |
+| `torch_minutes` | 1 | Light | Lit torch's remaining minutes — via `torchPtr` (`0x0224:0225`); 0 when none lit |
+| `torch_physical_light` | 1 | Light | Lit torch's physical illumination — a factor of `effective_light` (via `torchPtr`) |
+| `torch_magic_light` | 1 | Light | Lit torch's magic illumination — a factor of `effective_light` (via `torchPtr`) |
 | `player_weight` | 2 | Body | Strain from carried items (u16) |
 | `player_strength` | 2 | Body | Grows with combat victories (u16) |
 | `m0221` | 2 | Body | Damage pool in combat — each landed hit adds to it; death when it exceeds `player_strength` (u16) |
 | `heart_beat_interval` | 1 | Heart | Raw `heartCounterRel` — ticks between beats; lower = faster |
 | `player_fainting` | 1 | Body | Faint steps remaining — 0 means conscious |
 | `evil_wizard_dead` | 1 | Enemy | FF = wizard defeated |
+
+The light fields compose the sight equation (`C660`): `effective_light`'s physical byte is `ambient_light`'s physical byte plus `torch_physical_light`, and its magic byte is `ambient_light`'s magic byte plus `torch_magic_light`. Exposing the sum and its torch factors together lets the agent relate its torch to its ability to see. In normal play `ambient_light` is `0x0000` (only written at the Wizard's death), so the torch is effectively the whole of sight.
 
 The previous `heart_beat_countdown` field is dropped. It was the raw `heartCounter` (0x02AE) — a countdown that decrements on the CoCo's 60 Hz interrupt and reloads from `heartCounterRel` every time it reaches zero. It changes every frame, which makes change detection (see §2) impossible. It is the timer *mechanism*, not game state.
 
@@ -131,6 +136,7 @@ Fields use semantic prefixes to group related concepts:
 | `at_` | `at_cell_x`, `at_cell_y`, `at_floor`, `at_heading` | Spatial location |
 | `player_` | `player_weight`, `player_strength`, `player_fainting` | Physical attributes |
 | `heart_` | `heart_beat_interval` | Heartbeat mechanics |
+| `torch_` | `torch_minutes`, `torch_physical_light`, `torch_magic_light` | Lit torch state |
 | `evil_` | `evil_wizard_dead` | Enemy state |
 | _(bare)_ | `game_mode`, `ambient_light`, `effective_light`, `m0221` | No semantic prefix |
 
@@ -173,16 +179,16 @@ The order is the contract. If the two sides fall out of sync, all values shift a
 
 The previous system built a JSON string for each observation — about **250 bytes** of text, of which only ~10 were actual game data. On the emulated 6809 CPU running at ~0.89 MHz, string formatting eats into the frame budget.
 
-**Raw bytes** invert this: we send just the values in schema order. Eighteen bytes carry all thirteen fields. The Lua side writes with simple `string.char()` calls — near-zero CPU cost. The Python side reads a byte string and hands it to the schema for deserialization.
+**Raw bytes** invert this: we send just the values in schema order. Twenty-one bytes carry all sixteen fields. The Lua side writes with simple `string.char()` calls — near-zero CPU cost. The Python side reads a byte string and hands it to the schema for deserialization.
 
 ```
-[00] [01] [16] [0C] [02] [2A] [00] [00] [13] [23] [17] [A0] [50] [07] [00] [16] [00] [00]
-  ↑     ↑     ↑    ↑    ↑    ↑    ↑    ↑    ↑    ↑     ↑    ↑    ↑    ↑    ↑    ↑    ↑    ↑
-game  at   at    at   at   ambi ambi eff  eff  plyr plyr plyr plyr m0221 m0221 heart plyr evil
-mode  floor cellX cellY head LgtHi LgtLo LgtHi LgtLo WgtHi WgtLo StrHi StrLo  Hi    Lo  Inter faint WizDed
+[00] [00] [16] [0C] [00] [00] [00] [00] [07] [64] [07] [00] [23] [00] [A0] [17] [00] [07] [28] [00] [00]
+  ↑    ↑    ↑    ↑    ↑    ↑    ↑    ↑    ↑    ↑    ↑    ↑    ↑    ↑    ↑    ↑    ↑    ↑    ↑    ↑    ↑
+game at   at    at   at   ambi ambi eff  eff  torch torch torch plyr plyr plyr plyr m0221 m0221 heart plyr evil
+mode floor cellX cellY head LgtLo LgtHi LgtLo LgtHi  Min  Phys  Mag  WgtLo WgtHi StrLo StrHi  Lo   Hi  Inter faint WizDed
 ```
 
-Five fields are u16 (two bytes each: `ambient_light`, `effective_light`, `player_weight`, `player_strength`, `m0221`); the remaining eight are u8.
+Five fields are u16 (two bytes each: `ambient_light`, `effective_light`, `player_weight`, `player_strength`, `m0221`); the remaining eleven are u8.
 
 ### The Tracked Wire Record
 
@@ -190,9 +196,9 @@ The state channel now carries **tagged records** instead of a bare frame. A reco
 
 | Kind | Payload | Meaning |
 |------|---------|---------|
-| `S` | 18-byte frame | Numeric state changed, screen text unchanged |
+| `S` | 21-byte frame | Numeric state changed, screen text unchanged |
 | `T` | 1 byte `comColor` + 1024 pixel bytes | Screen text changed, numeric state unchanged |
-| `B` | 18-byte frame + 1 byte `comColor` + 1024 pixel bytes | Both changed |
+| `B` | 21-byte frame + 1 byte `comColor` + 1024 pixel bytes | Both changed |
 
 This is change detection, not batching. A record in the FIFO means "something meaningful changed." Identical frames are not written at all — replaced by a snapshot comparison in Lua (see §3).
 
@@ -296,7 +302,7 @@ In addition to the wire fields, `DaggorathState` exposes the derived `heart_rate
 
 `emulator.py`'s `recv()` reads a newline-terminated record from the state FIFO. It dispatches on the kind byte:
 
-- `S` → unpack the 16-byte frame, reuse the last-decoded text
+- `S` → unpack the 21-byte frame, reuse the last-decoded text
 - `T` → decode the pixel block via `screen.py`, reuse the last-known state
 - `B` → unpack both
 
@@ -315,11 +321,11 @@ Testing happens at two levels:
 **Integration test** — launches actual MAME. Lives in `tests/test_emulator.py`. Receives records, constructs `DaggorathState`, asserts field values match known game-startup values, and verifies the first record is a `B`.
 
 **Unit tests** — lives in `tests/test_state.py` (standalone file, no MAME needed, no unified test file). Tests:
-- Schema has 12 fields, `FRAME_LEN` = 16
+- Schema has 16 fields, `FRAME_LEN` = 21
 - `unpack()` with known test bytes → correct typed dict
 - `DaggorathState(raw)` construction → attribute access via `__slots__`
 - `DaggorathState` immutability (`__setattr__` raises `AttributeError`)
-- `to_array()` → correct numpy shape (13,) and uint16 dtype
+- `as_perceived()` → perceived-state Dict; `scalars` has shape (16,) and uint16 dtype
 - `heart_rate` derivation → `60 / interval`, and 0 when the interval is zero
 - Record dispatch → `S`, `T`, and `B` kinds each route correctly
 
@@ -333,7 +339,7 @@ Testing happens at two levels:
 
 `state.beginWatching(stateFile, config)` is the entry point.
 
-The schema is a constant named `SCHEMA` — an ordered array of `{ name, addr, width }` tables (13 entries, listed in §1). The byte order is the shared contract with `DaggorathStateSchema.FIELDS` in Python.
+The schema is a constant named `SCHEMA` — an ordered array of `{ name, addr, width }` tables (16 entries, listed in §1). The three torch fields carry `torchOffset` instead of `addr` and are read through `torchPtr`, the pointer to the lit torch (0 when none lit). The byte order is the shared contract with `DaggorathStateSchema.FIELDS` in Python.
 
 ```
 state.beginWatching(stateFile, config)
@@ -346,8 +352,8 @@ per-frame notifier:
     → increments the frame counter
     → lazy-acquires the CPU memory space on first sampled frame
     → skips if the frame isn't a multiple of the sampling rate
-    → reads 13 RAM addresses as u8 or two-byte u16 little-endian
-    → concatenates values into a 18-byte raw frame with string.char()
+    → reads 13 direct RAM addresses and the lit torch's three bytes (via torchPtr) as u8 or two-byte u16 little-endian
+    → concatenates values into a 21-byte raw frame with string.char()
     → reads the command-area pixel block and comColor
     → compares frame and pixels to their snapshots
     → writes an S / T / B tagged record (via pcall)
@@ -358,7 +364,7 @@ per-frame notifier:
 
 Two classes: `DaggorathStateSchema` (flyweight) and `DaggorathState` (immutable value object).
 
-The field definitions are a class attribute named `FIELDS` — a tuple of `(name, offset, width)` 3-tuples in the same order as Lua's `SCHEMA`. No dataclass wrapper. `FRAME_LEN` is 18 (8 u8 + 5 u16 fields).
+The field definitions are a class attribute named `FIELDS` — a tuple of `(name, offset, width)` 3-tuples in the same order as Lua's `SCHEMA`. No dataclass wrapper. `FRAME_LEN` is 21 (11 u8 + 5 u16 fields).
 
 ```
 _schema.unpack(data)
@@ -374,8 +380,13 @@ DaggorathState(data)
     → derives heart_rate from heart_beat_interval
     → after construction, __setattr__ raises AttributeError (immutable)
 
-to_array()
-    → returns a uint16 numpy array of the 13 raw fields
+as_perceived()
+    → returns the perceived-state Dict
+    → fills scalars with the sixteen self-fields
+    → zero-fills the world channels (hands, pack, creatures, objects, map) —
+      not sampled yet, so their zeros are stubs, not an empty world
+    → applies the perception gates (line-of-sight, mode, light) once the
+      world channels land
 ```
 
 ## Reference Documents

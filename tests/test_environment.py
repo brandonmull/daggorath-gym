@@ -40,14 +40,14 @@ _IPC_CONTRACT = IpcConfig(
 
 
 def test_reset_returns_valid_observation():
-    """reset() produces a uint16 observation array matching the state schema."""
+    """reset() produces the perceived-state Dict with self-fields in scalars."""
     env = DaggorathEnv(ipc_config=_IPC)
     try:
         observation, info = env.reset()
 
-        assert isinstance(observation, np.ndarray)
-        assert observation.dtype == np.uint16
-        assert len(observation) == len(FIELDS)
+        assert isinstance(observation, dict)
+        assert observation["scalars"].dtype == np.uint16
+        assert len(observation["scalars"]) == len(FIELDS)
     finally:
         env.close()
 
@@ -78,13 +78,13 @@ def test_gymnasium_consumer_contract():
         assert 0 <= int(action) < NUM_COMMANDS
 
         # ---------- observation space ----------
-        assert isinstance(env.observation_space, spaces.Box)
-        assert env.observation_space.shape == (len(FIELDS),)
-        assert env.observation_space.dtype == np.uint16
+        assert isinstance(env.observation_space, spaces.Dict)
+        assert env.observation_space["scalars"].shape == (len(FIELDS),)
+        assert env.observation_space["scalars"].dtype == np.uint16
 
         # ---------- reset ----------
         observation, info = env.reset()
-        assert isinstance(observation, np.ndarray)
+        assert isinstance(observation, dict)
         assert env.observation_space.contains(observation)
         assert isinstance(info, dict)
     finally:

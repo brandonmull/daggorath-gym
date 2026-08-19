@@ -1,0 +1,10 @@
+{
+  "plugin": {
+    "name": "state-field-verification",
+    "description": "Pokes known RAM values and verifies the production state sampler reads them back correctly",
+    "version": "0.0.1",
+    "author": "Daggorath Gym",
+    "type": "plugin",
+    "start": "true"
+  }
+}

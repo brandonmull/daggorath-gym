@@ -6,15 +6,16 @@ This document specifies perception — the perceptible state: what the player ca
 
 ## Purpose
 
-Perception answers one question: what does the player perceive right now? The answer is the perceptible state, assembled from the channels below and passed through two gates. The observation is that state serialized into a fixed-shape `Dict` (grid + scalars).
+Perception answers one question: what does the player perceive right now? The answer is the perceptible state, assembled from the channels below and passed through two gates. The observation is that state serialized into a fixed-shape `Dict` of six channels.
 
 ## Channels
 
-- **State.** Thirteen raw fields — `game_mode`, `at_floor`, `at_cell_x`, `at_cell_y`, `at_heading`, `ambient_light`, `player_weight`, `player_strength`, `m0221`, `effective_light`, `heart_beat_interval`, `player_fainting`, `evil_wizard_dead` — shipped as uint16. Always present: the player knows their own body and position even in the dark.
-- **Hands.** The two held objects, always present on the status line. An unrevealed object shows its class; a revealed object shows its proper name.
-- **Creatures.** The creature array — `alive`, `type`, `X`, `Y` per slot — gated by light.
-- **Objects.** The pack (inventory) and the floor objects at the player's cell — the pack gated by mode, the floor gated by light.
-- **Map.** The maze cells within the visible corridor — gated by light.
+- **Scalars.** Sixteen raw self-fields — `game_mode`, `at_floor`, `at_cell_x`, `at_cell_y`, `at_heading`, `ambient_light`, `effective_light`, `torch_minutes`, `torch_physical_light`, `torch_magic_light`, `player_weight`, `player_strength`, `m0221`, `heart_beat_interval`, `player_fainting`, `evil_wizard_dead` — shipped as uint16. Always present: the player knows their own body and position even in the dark.
+- **Hands.** The two held objects as specifier indices (the class until revealed, the proper name after). Always present.
+- **Pack.** The backpack as specifier slots — gated by mode (EXAMINE).
+- **Creatures.** The creature array — `alive`, `type`, `X`, `Y` per slot, absolute — gated by light.
+- **Objects.** Floor objects — `specifier`, `X`, `Y`, absolute — gated by light.
+- **Map.** The maze edge bytes — gated by light.
 
 Sound is a deferred channel — see `sound/plan.md`.
 
@@ -40,17 +41,18 @@ Perception is instantaneous. The environment holds no "visited cell," no "seen c
 
 ## Encoding
 
-The observation is a `Dict` with two keys, processed by Stable-Baselines3's `MultiInputPolicy` — a CNN over the grid and an MLP over the scalars, concatenated:
+The observation is a fixed-shape `Dict` of six channels, defined in code as `PERCEIVED_SPACE` in `state.py`. Every channel is absolute and gated; agent-side wrappers translate to relative.
 
-- **`grid`** — a `Box(C, 32, 32)` one-hot multi-channel image:
-  - cell type: open, normal door, magic door, wall — one channel each
-  - creatures: one channel per type, `1` where a visible creature of that type sits
-  - objects: one channel per class, `1` where a visible floor object of that class sits
-  - player: `1` at the player's cell
-  - visible: `1` for cells in view — the light + line-of-sight mask
-- **`scalars`** — a `Box(S,)` of the 13 self-fields plus the two hand specifiers and the lit torch's minutes.
+- **`scalars`** — `Box(16,)` uint16: the sixteen self-fields.
+- **`hands`** — `Box(2,)` uint8: the two held objects as specifier indices (255 = empty).
+- **`pack`** — `Box(8,)` uint8: the backpack as specifier indices, zero-padded.
+- **`creatures`** — `Box(32, 4)` uint8: per slot, `alive`/`type`/`X`/`Y`; dead slots zeroed.
+- **`objects`** — `Box(8, 3)` uint8: visible floor objects as `specifier`/`X`/`Y`, zero-padded.
+- **`map`** — `Box(32, 32)` uint8: the maze edge bytes.
 
-The one-hot grid gives the CNN the spatial structure it needs — a CNN's local filters and translation invariance are the right inductive bias for a maze, where a flat MLP would treat adjacent cells as unrelated numbers and relearn each spatial pattern at every position. The scalars carry the body and status numbers that have no place on the grid. Scalar magnitudes are normalized by a wrapper (e.g. `VecNormalize`) at training time, not baked into the environment.
+Only `scalars` is sampled today; the five world channels are zeroed stubs until creatures, objects, and maze land on the wire. The map's exact representation (edge byte vs. one-hot, and how visibility is marked) is still open — see `navigation/plan.md`.
+
+The map is static geometry; the entity tables and the scalars are explicit values. Scalar magnitudes are normalized by a wrapper (e.g. `VecNormalize`) at training time, not baked into the environment.
 
 ## Decisions
 
@@ -58,13 +60,16 @@ The one-hot grid gives the CNN the spatial structure it needs — a CNN's local 
 - **Modal perception.** LOOK vs EXAMINE via `displayFunction` — the dungeon and the inventory are mutually exclusive.
 - **No memory.** Perception is instantaneous; the environment holds no history.
 - **Light-gated via line-of-sight.** The dungeon channels appear only while `effective_light > 0`, within the corridor walk.
-- **`Dict` + `MultiInputPolicy`.** The observation is a `Dict` of grid + scalars — a CNN reads the grid's spatial structure, an MLP reads the scalars.
+- **`Dict` + `MultiInputPolicy`.** The observation is a six-channel `Dict` — a CNN reads the map's spatial structure, an MLP reads the entity tables and the scalars.
+- **Shared object index.** Objects in the observation are reported as their specifier index (0–30), the same index the action's `object` slot uses — the agent commands an object by reusing the index it observed, with no learned translation between the two.
+- **Absolute-and-gated env, wrappers translate.** The environment reports absolute, perception-gated state — positions in the world's own coordinates, filtered only by line-of-sight, display mode, and light. Relative translation (egocentric positions, survival margins), normalization, and memory are agent-side wrapper concerns, not the environment's. The observation keeps the player's absolute frame (`at_cell_x`, `at_cell_y`, `at_heading`) so a wrapper can translate absolute → relative.
+- **True state for the reward; `as_perceived` for the policy.** The environment holds the true state — absolute and ungated — as a well-structured value object the reward wrapper interrogates directly. The state model's `as_perceived()` method applies the perception gates and returns the observation. Two consumers, one source: the reward reads the ungated true state; the policy reads the gated perceived state.
 
 ## Reference Documents
 
 | Document | What It Contains |
 |----------|-----------------|
-| `docs/plans/state/plan.md` | The thirteen raw state fields |
+| `docs/plans/state/plan.md` | The sixteen raw state fields |
 | `docs/plans/creatures/plan.md` | The creature array — slots, types, and positions |
 | `docs/plans/objects/plan.md` | Hands, pack, and the reveal distinction |
 | `docs/plans/sound/plan.md` | The auditory cue list — distance, sound type, source |

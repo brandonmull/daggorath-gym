@@ -16,7 +16,7 @@ This document addresses four design questions:
 - **Command word** — a single instruction the parser recognizes (MOVE, ATTACK, INCANT, etc.). There are 13.
 - **Command phrase** — the full typed string sent to the game, built from a command word plus parts ("ATTACK LEFT", "GET LEFT TORCH"). There are 154.
 - **Command index** — the 0–153 byte that identifies a phrase on the wire.
-- **Action space** — a concept from Gymnasium (the RL framework we use). It describes what choices the agent can make at each step. Ours is a set of 154 discrete choices (indices 0–153), one per command phrase. "Action" in this plan means a Gymnasium action — the integer the agent emits to select a command. "Action space" means the set of all 154 possible actions.
+- **Action space** — a concept from Gymnasium (the RL framework we use). It describes what choices the agent can make at each step. Ours is factored — a pair (template, object) selecting a command shape and an object specifier — represented as `MultiDiscrete([26, 31])`. "Action" in this plan means a Gymnasium action — the pair the agent emits to select a command. "Action space" means the set of all such pairs. The 154 command phrases and their 1-byte indices remain the wire contract; the environment maps each pair to a phrase before sending.
 
 ---
 
@@ -117,11 +117,20 @@ INCANT accepts only ring proper names (ENERGY, FINAL, FIRE, GOLD, ICE, JOULE, RI
 | SWORD | ELVISH, IRON, WOODEN |
 | TORCH | DEAD, LUNAR, PINE, SOLAR |
 
-### Flat Enumeration (Chosen)
+### Flat Enumeration (Wire Contract)
 
-For RL training with stable-baselines3, a flat list of all valid command phrases maps directly to `gymnasium.spaces.Discrete(154)`. The ordered list is the shared contract between Python and Lua — both sides maintain an identical ordered list where index 0 means "MOVE", index 1 means "MOVE BACK", and so on.
+The 154 command phrases remain a flat, ordered list — this is the wire contract between Python and Lua. Both sides maintain an identical list; index 0 means "MOVE", index 1 means "MOVE BACK", and so on, and a single byte (0–153) selects a phrase on the wire.
 
-> **Future consideration:** A grammar-based approach (command byte + parameter bytes for object/direction selection) would be more elegant and extensible, but the flat enumeration is simpler to start with.
+### Factored Action Space (Chosen)
+
+The agent does not choose a flat index. Its action space is a pair — (template, object) — represented as `gymnasium.spaces.MultiDiscrete([26, 31])`:
+
+- **template** — the command shape with the object slot blanked. 26 of them: 21 object-less (MOVE, MOVE BACK, TURN LEFT, …, EXAMINE, LOOK) and 5 object-bearing (GET LEFT, GET RIGHT, PULL LEFT, PULL RIGHT, INCANT).
+- **object** — the object specifier index (0–30), the same index the observation uses for objects.
+
+The environment maps the pair to a command phrase (template "PULL LEFT", object 13 → "PULL LEFT IRON SWORD"), then to the 1-byte wire index. The object index is shared end-to-end: an object the agent sees as index N in the observation is acted on by emitting object = N. This collapses the 124 GET/PULL phrases into 4 templates plus one shared index, so the agent reuses the index it observed instead of learning a separate 124-way mapping. For object-less templates the object field is a "don't care"; the environment ignores it.
+
+The direction is deliberately *not* factored out: LEFT/RIGHT is overloaded — the hand for GET/PULL/STOW/DROP/REVEAL/USE, a spatial direction for MOVE/TURN/ATTACK — and it has no single index in the observation to align with. The object is the one dimension with a shared index, so it is the one dimension factored out.
 
 ### Open: Action Space Scope
 
@@ -199,7 +208,7 @@ This approach has two advantages over a static flat list:
 
 ### Python Side
 
-The emulator's `send()` writes a single byte to the command socket. The environment's `step()` selects the index from the action space, wraps it in a value object, sends it, and awaits the next state observation.
+The emulator's `send()` writes a single byte to the command socket. The environment's `step()` selects the (template, object) pair from the action space, maps it to a command phrase, wraps the resulting index in a value object, sends it, and awaits the next state observation.
 
 ---
 

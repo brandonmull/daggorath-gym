@@ -66,7 +66,7 @@ readCommandAreaPixels()
     → returns the pixel block plus comColor
 ```
 
-Capture is gated by `displayFunction == 0xCE66` — during the demo loop there is no meaningful command-area text to read.
+Capture is gated by live play (`displayFunction` is `0xCE66` LOOK or `0xD495` EXAMINE) — during the demo loop there is no meaningful command-area text to read.
 
 ## Decoding
 

@@ -61,16 +61,16 @@ def test_state_has_valid_values():
         operator.stop()
 
 
-def test_state_to_array_shape():
-    """to_array() produces a schema-consistent output from real MAME data."""
+def test_state_as_perceived_shape():
+    """as_perceived() produces a schema-consistent output from real MAME data."""
     operator = MameOperator(ipc_config=_IPC)
     try:
         operator.start()
         state = operator.recv()
-        arr = state.to_array()
+        perceived = state.as_perceived()
 
-        assert isinstance(arr, np.ndarray)
-        assert len(arr) == len(FIELDS)
-        assert arr.dtype == np.uint16
+        assert isinstance(perceived, dict)
+        assert perceived["scalars"].dtype == np.uint16
+        assert len(perceived["scalars"]) == len(FIELDS)
     finally:
         operator.stop()

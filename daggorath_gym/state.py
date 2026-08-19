@@ -2,12 +2,15 @@
 
 Receives raw byte frames from the Lua state module, deserializes them
 into immutable DaggorathState value objects. Derives agent-facing values
-(heart rate) that are not shipped over the wire.
+(heart rate) that are not shipped over the wire. Defines the true-state
+schema (FIELDS) and the perceived-state schema (PERCEIVED_SPACE) that the
+environment exposes as the observation.
 """
 
 import struct
 
 import numpy as np
+from gymnasium import spaces
 
 # Schema: ordered tuple of (name, offset, width) 3-tuples.
 # The byte order is the shared contract with Lua's SCHEMA.
@@ -18,18 +21,46 @@ FIELDS: list[tuple[str, int, int]] = [
     ("at_cell_y", 3, 1),
     ("at_heading", 4, 1),
     ("ambient_light", 5, 2),
-    ("player_weight", 7, 2),
-    ("player_strength", 9, 2),
-    ("heart_beat_interval", 11, 1),
-    ("player_fainting", 12, 1),
-    ("evil_wizard_dead", 13, 1),
+    ("effective_light", 7, 2),
+    ("torch_minutes", 9, 1),
+    ("torch_physical_light", 10, 1),
+    ("torch_magic_light", 11, 1),
+    ("player_weight", 12, 2),
+    ("player_strength", 14, 2),
+    ("m0221", 16, 2),
+    ("heart_beat_interval", 18, 1),
+    ("player_fainting", 19, 1),
+    ("evil_wizard_dead", 20, 1),
 ]
 
-# Total frame length in bytes: 8 u8 + 3 u16 = 8 + 6 = 14
-FRAME_LEN = 14
+# Total frame length in bytes: 11 u8 + 5 u16 = 11 + 10 = 21
+FRAME_LEN = 21
 
 # Number of fields
 NUM_FIELDS = len(FIELDS)
+
+# Perceived-state dimensions. Creature slots and map size are the game's own
+# bounds; the pack and floor-object caps are our fixed-capacity choices
+# (fixed slots, zero-padded — the perception plan's option A).
+CREATURE_SLOTS = 32
+MAP_SIZE = 32
+HAND_COUNT = 2
+PACK_CAPACITY = 8
+FLOOR_OBJECT_CAPACITY = 8
+
+# The perceived state — what the policy sees — is the true state passed
+# through the perception gates (line-of-sight, display mode, light), reported
+# in absolute coordinates; agent-side wrappers translate to relative. Only the
+# scalars are sampled today, so the world channels are zeroed stubs until
+# creatures, objects, and maze land on the wire.
+PERCEIVED_SPACE = spaces.Dict({
+    "scalars": spaces.Box(low=0, high=65535, shape=(NUM_FIELDS,), dtype=np.uint16),
+    "hands": spaces.Box(low=0, high=255, shape=(HAND_COUNT,), dtype=np.uint8),
+    "pack": spaces.Box(low=0, high=255, shape=(PACK_CAPACITY,), dtype=np.uint8),
+    "creatures": spaces.Box(low=0, high=255, shape=(CREATURE_SLOTS, 4), dtype=np.uint8),
+    "objects": spaces.Box(low=0, high=255, shape=(FLOOR_OBJECT_CAPACITY, 3), dtype=np.uint8),
+    "map": spaces.Box(low=0, high=255, shape=(MAP_SIZE, MAP_SIZE), dtype=np.uint8),
+})
 
 
 class DaggorathStateSchema:
@@ -76,7 +107,7 @@ class DaggorathState:
     attribute raises AttributeError.
 
     `heart_rate` is a derived attribute (beats per second) computed from
-    `heart_beat_interval`; it is not part of the wire format or to_array().
+    `heart_beat_interval`; it is not part of the wire format or as_perceived().
     """
 
     __slots__ = tuple(name for name, _, _ in FIELDS) + ("heart_rate", "command_text")
@@ -96,9 +127,23 @@ class DaggorathState:
             f"DaggorathState is immutable; cannot set '{name}'"
         )
 
-    def to_array(self) -> np.ndarray:
-        """Return raw state fields as a uint16 numpy array (shape (11,))."""
-        return np.array(
-            [getattr(self, name) for name, _, _ in FIELDS],
-            dtype=np.uint16,
-        )
+    def as_perceived(self) -> dict[str, np.ndarray]:
+        """Return the state as perceived by the player, as a Dict observation.
+
+        The scalars are the sixteen always-present self-fields. The world
+        channels (hands, pack, creatures, objects, map) are zeroed stubs —
+        they are not sampled yet, and their zeros must not be read as an
+        empty world. The perception gates (line-of-sight, display mode,
+        light) will fill them once the world channels land on the wire.
+        """
+        return {
+            "scalars": np.array(
+                [getattr(self, name) for name, _, _ in FIELDS],
+                dtype=np.uint16,
+            ),
+            "hands": np.zeros(HAND_COUNT, dtype=np.uint8),
+            "pack": np.zeros(PACK_CAPACITY, dtype=np.uint8),
+            "creatures": np.zeros((CREATURE_SLOTS, 4), dtype=np.uint8),
+            "objects": np.zeros((FLOOR_OBJECT_CAPACITY, 3), dtype=np.uint8),
+            "map": np.zeros((MAP_SIZE, MAP_SIZE), dtype=np.uint8),
+        }

@@ -109,10 +109,10 @@ def test_immutability():
 
 # ---- agent interface -------------------------------------------------------
 
-def test_to_array():
-    """to_array returns a uint16 numpy array whose shape matches the schema."""
+def test_as_perceived():
+    """as_perceived returns the perceived-state Dict with self-fields in scalars."""
     state = DaggorathState(_build_test_frame())
-    arr = state.to_array()
-    assert isinstance(arr, np.ndarray)
-    assert len(arr) == len(FIELDS)
-    assert arr.dtype == np.uint16
+    perceived = state.as_perceived()
+    assert isinstance(perceived, dict)
+    assert perceived["scalars"].dtype == np.uint16
+    assert len(perceived["scalars"]) == len(FIELDS)

@@ -56,6 +56,10 @@ Verified from the disassembly:
 
 The environment samples objects by walking the pointer chains: `leftHand` and `rightHand` give the two held objects, `firstPackObject` walks the pack, `torchPtr` gives the lit torch. Each object is reported as its class (slot + 10) plus, when revealed, its proper type (slot + 9) — reveal is the strength-to-reveal field (slot + 11) being 0. Floor objects — location (slot + 5) is 0 and the cell is the player's — are gated by light like the rest of the dungeon. Monster-held objects (location FF) stay hidden. The lit torch's minutes (slot + 6) are self-state, exposed at full precision.
 
+### Wire
+
+Each object ships as three raw bytes — class (slot + 10), proper type (slot + 9), and reveal threshold (slot + 11) — not as a precomputed specifier. Python derives both faces from those bytes: the perceived specifier index (0–30, the bare class until revealed, the proper name + class after) for the observation, and the true type + reveal threshold for the reward's internal state. The perceived specifier is the shared index the observation and the action's `object` slot both use.
+
 ## Decisions
 
 Perception mirrors what the player perceives:
