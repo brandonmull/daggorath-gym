@@ -31,8 +31,19 @@ A one-shot, loud, temporally-local signal that a discrete happening occurred —
 | Wall bump | wall-hit sound (14) |
 | Faint / recover | `player_fainting` transitions |
 | Death | `game_mode` → FF, "YET ANOTHER DOES NOT RETURN" |
+| Command rejected | "???" in the command area; `perfectMatch` (0x027B) never fires |
 
 The sound module's auditory cues (creature approach sound, heartbeat, combat sounds) are a related but separate channel — derived from RAM rather than events.
+
+## Why events beat flags (recorded, not yet acted on)
+
+From the factored-action-space discussion (`../commands/conversation.md`):
+
+- **A flag is a level; an event is a pulse.** `command_rejected` as a boolean means "rejected right now," which needs edge-detection to count once; an event says "a rejection happened once, here," and is self-counting and self-ordering. Most reward signals — spikes, the two-stage win, novelty — are transitions over time, which events model directly.
+- **Environment reports, wrapper prices.** Detection is a fact (the environment's job, from `command_text`/`perfectMatch`); sequencing and valuation are the reward wrapper's job. `command_rejected` would be a true-state fact, not a `PERCEIVED_SPACE` channel — the policy never sees it, only feels the penalty.
+- **SB3 compatibility.** SB3's algorithm consumes only a scalar reward per step and has no event-stream concept — nor needs one. The event stream is an env → wrapper fact channel; the wrapper (agent-side, arbitrary memory) translates events + sequencing into that scalar.
+- **Detection fork (unresolved).** Persistent transitions (kill `FF→0`, reveal `→0`, descent, death) can be edge-detected in Python from raw state deltas — consistent with "wire carries raw, Python derives." Transient signals (`perfectMatch` `0→FF→0`, `!!!`, one-frame sounds) only Lua sees frame-accurately, and would need a new `E` record. `command_rejected` is persistent ("???" lingers), so Python can derive it.
+- **Sequencing.** command → reject is one step apart, so the wrapper's own transition gives the ordering; sequence numbers on events cover multi-step attribution (kill-after-attack) if needed.
 
 ## Reference Documents
 
