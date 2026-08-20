@@ -10,7 +10,7 @@ Perception answers one question: what does the player perceive right now? The an
 
 ## Channels
 
-- **Scalars.** Eighteen raw self-fields — `game_mode`, `at_floor`, `at_cell_x`, `at_cell_y`, `at_heading`, `ambient_light_physical`, `ambient_light_magical`, `effective_light_physical`, `effective_light_magical`, `torch_minutes`, `torch_physical_light`, `torch_magic_light`, `player_weight`, `player_strength`, `m0221`, `heart_beat_interval`, `player_fainting`, `evil_wizard_dead` — shipped as uint16. Always present: the player knows their own body and position even in the dark.
+- **Scalars.** Nineteen fields — `game_mode`, `at_floor`, `at_cell_x`, `at_cell_y`, `at_heading`, `ambient_light_physical`, `ambient_light_magical`, `effective_light_physical`, `effective_light_magical`, `torch_minutes`, `torch_physical_light`, `torch_magic_light`, `player_weight`, `player_strength`, `m0221`, `heart_beat_interval`, `player_fainting`, `evil_wizard_dead`, `display_function` — shipped as uint16. Always present: the player knows their own body and position even in the dark, and the display mode tells the gates which view is active.
 - **Hands.** The two held objects as specifier indices (the class until revealed, the proper name after). Always present.
 - **Pack.** The backpack as specifier slots — gated by mode (EXAMINE).
 - **Creatures.** The creature array — `alive`, `type`, `X`, `Y` per slot, absolute — gated by light.
@@ -45,14 +45,14 @@ Perception is instantaneous. The environment holds no "visited cell," no "seen c
 
 The observation is a fixed-shape `Dict` of six channels, defined in code as `PERCEIVED_SPACE` in `state.py`. Every channel is absolute and gated; agent-side wrappers translate to relative.
 
-- **`scalars`** — `Box(18,)` uint16: the eighteen self-fields.
+- **`scalars`** — `Box(19,)` uint16: the nineteen fields (including `display_function`).
 - **`hands`** — `Box(2,)` uint8: the two held objects as specifier indices (255 = empty).
-- **`pack`** — `Box(8,)` uint8: the backpack as specifier indices, zero-padded.
+- **`pack`** — `Box(8,)` uint8: the backpack as specifier indices, 0xFF-padded (255 = empty).
 - **`creatures`** — `Box(32, 4)` uint8: per slot, `alive`/`type`/`X`/`Y`; dead slots zeroed.
-- **`objects`** — `Box(8, 3)` uint8: visible floor objects as `specifier`/`X`/`Y`, zero-padded.
+- **`objects`** — `Box(8, 3)` uint8: visible floor objects as `specifier`/`X`/`Y`, 0xFF-padded (255 = empty).
 - **`map`** — `Box(2, 32, 32)` uint8: two planes — plane 0 the maze edge bytes, plane 1 the per-cell feature byte (0 none, 1 hole in ceiling, 2 ladder in ceiling, 3 hole in floor, 4 ladder in floor), both `0xFF` unseen.
 
-Only `scalars` is sampled today; the five world channels are zeroed stubs until creatures, objects, and maze land on the wire and the perception gates fill them. The map's representation is settled: the wire carries the raw edge bytes, and the perceived map keeps visible cells' edge bytes while marking unseen cells `0xFF` (see `navigation/plan.md`).
+All six channels are filled by `as_perceived()`: the scalars and hands are always present, the pack appears in EXAMINE, and the creatures, objects, and map appear in LOOK with physical light, within the corridor walk. The map's representation is settled: the wire carries the raw edge bytes, and the perceived map keeps visible cells' edge bytes while marking unseen cells `0xFF` (see `navigation/plan.md`).
 
 The map is static geometry; the entity tables and the scalars are explicit values. Scalar magnitudes are normalized by a wrapper (e.g. `VecNormalize`) at training time, not baked into the environment.
 
@@ -71,7 +71,7 @@ The map is static geometry; the entity tables and the scalars are explicit value
 
 | Document | What It Contains |
 |----------|-----------------|
-| `docs/plans/state/plan.md` | The eighteen raw state fields |
+| `docs/plans/state/plan.md` | The nineteen raw state fields |
 | `docs/plans/creatures/plan.md` | The creature array — slots, types, and positions |
 | `docs/plans/objects/plan.md` | Hands, pack, and the reveal distinction |
 | `docs/plans/sound/plan.md` | The auditory cue list — distance, sound type, source |

@@ -8,9 +8,9 @@ a simple start/stop/recv/send API.
 
 The state channel carries fixed-size tagged records (no delimiter):
 
-    S  + 21-byte frame                                 state only changed
+    S  + 23-byte frame                                 state only changed
     T  + 1-byte comColor + 1024 pixel bytes            text only changed
-    B  + 21-byte frame + 1-byte comColor + 1024 px     both changed
+    B  + 23-byte frame + 1-byte comColor + 1024 px     both changed
     M  + 1024-byte maze                                maze changed
     C  + 128-byte creature array                       creatures changed
     O  + 70-byte object record                         objects changed

@@ -7,9 +7,9 @@
 --   config: { frame_sampling_rate = N } (default: 1 = every frame)
 --
 -- Wire format (fixed-size, no delimiter — the pixel payload is binary):
---   "S" + 21-byte frame                              state only changed
+--   "S" + 23-byte frame                              state only changed
 --   "T" + 1-byte comColor + 1024 pixel bytes         text only changed
---   "B" + 21-byte frame + 1-byte comColor + 1024 px  both changed
+--   "B" + 23-byte frame + 1-byte comColor + 1024 px  both changed
 --   "M" + 1024-byte maze                             maze changed
 --   "C" + 128-byte creature array                    creatures changed
 --   "O" + 70-byte object record                      objects changed
@@ -124,6 +124,7 @@ local SCHEMA = {
     { name = "heartBeatInterval",    addr = 0x02AF, width = 1 },
     { name = "playerFainting",       addr = 0x0228, width = 1 },
     { name = "evilWizardDead",       addr = 0x022B, width = 1 },
+    { name = "displayFunction",      addr = 0x02B2, width = 2 },
 }
 
 -- Internal state

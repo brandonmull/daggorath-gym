@@ -68,3 +68,18 @@ def walk_corridor(
         y += _DIRECTION_DY[heading]
 
     return visible
+
+
+def rewrite_magic_doors(byte: int) -> int:
+    """Rewrite every magic-door 2-bit edge field in a maze byte to wall.
+
+    Magic doors draw as walls under a physical-only torch; the perception
+    applies this rewrite to a cell's edge byte once its depth reaches the
+    magic-light reach. Normal doors and open edges are left untouched.
+    """
+    rewritten = byte
+    for direction in range(4):
+        shift = direction * 2
+        if ((byte >> shift) & 0x03) == EDGE_MAGIC_DOOR:
+            rewritten = (rewritten & ~(0x03 << shift)) | (EDGE_WALL << shift)
+    return rewritten

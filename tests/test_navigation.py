@@ -17,6 +17,7 @@ from daggorath_gym.navigation import (
     EDGE_OPEN,
     EDGE_WALL,
     decode_edge,
+    rewrite_magic_doors,
     walk_corridor,
 )
 
@@ -105,3 +106,17 @@ def test_walk_corridor_reach_cap():
     visible = walk_corridor(maze, 16, 16, DIRECTION_NORTH, 255)
     assert len(visible) == 10
     assert max(visible.values()) == 9
+
+
+# ---- magic-door rewrite -----------------------------------------------------
+
+def test_rewrite_magic_doors():
+    """Magic-door fields become walls; the other three fields are untouched."""
+    byte = _cell(EDGE_OPEN, EDGE_MAGIC_DOOR, EDGE_NORMAL_DOOR, EDGE_WALL)
+    assert rewrite_magic_doors(byte) == _cell(EDGE_OPEN, EDGE_WALL, EDGE_NORMAL_DOOR, EDGE_WALL)
+
+
+def test_rewrite_magic_doors_no_magic_is_identity():
+    """A byte with no magic doors is returned unchanged."""
+    byte = _cell(EDGE_OPEN, EDGE_NORMAL_DOOR, EDGE_WALL, EDGE_OPEN)
+    assert rewrite_magic_doors(byte) == byte
