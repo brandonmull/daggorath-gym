@@ -55,6 +55,10 @@ _DISPLAY_EXAMINE = 0xD495
 # galdrog, demon, wizard. The other seven types are physical (see creatures plan).
 _MAGICAL_CREATURE_TYPES = frozenset({0x06, 0x08, 0x09, 0x0A, 0x0B})
 
+# Proper-type token of the FINAL ring — the win's terminal: INCANT FINAL
+# writes this token into the held ring's proper-type field (objects/plan.md).
+_FINAL_RING_TOKEN = 0x12
+
 # Perceived-state dimensions. Creature slots and map size are the game's own
 # bounds; the pack and floor-object caps are our fixed-capacity choices
 # (fixed slots, 0xFF-padded — the perception plan's option A).
@@ -226,8 +230,9 @@ class DaggorathState:
 
     `heart_rate` is a derived attribute (beats per second) computed from
     `heart_beat_interval`; `command_rejected` is derived from `command_text`
-    (True when the command area shows the game's "???" rejection). Neither is
-    part of the wire format or as_perceived().
+    (True when the command area shows the game's "???" rejection); and
+    `holds_final_ring` is True when a hand holds the FINAL ring (the win's
+    terminal). None of them is part of the wire format or as_perceived().
     The world attributes — `maze`, `creatures`, `hands`, `pack`, `objects`,
     `holes_ladders` — hold the true, ungated state decoded from the M/C/O/H
     records, and are None until the corresponding record has arrived.
@@ -239,6 +244,7 @@ class DaggorathState:
             "heart_rate",
             "command_text",
             "command_rejected",
+            "holds_final_ring",
             "maze",
             "creatures",
             "hands",
@@ -284,6 +290,16 @@ class DaggorathState:
             object.__setattr__(self, "hands", hands)
             object.__setattr__(self, "pack", pack)
             object.__setattr__(self, "objects", floor_objects)
+
+        # The win's terminal: a hand holding the FINAL ring (0x12), set by
+        # INCANT FINAL. A derived true-state fact used by both the env's
+        # termination check and the reward wrapper's +1 spike.
+        object.__setattr__(
+            self,
+            "holds_final_ring",
+            self.hands is not None
+            and any(int(hand[1]) == _FINAL_RING_TOKEN for hand in self.hands),
+        )
 
         object.__setattr__(
             self,

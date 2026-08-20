@@ -89,8 +89,7 @@ _GAMMA = 0.99              # discount inside the potential-based shaping term
 
 # The win is two-stage: killing the wizard (evil_wizard_dead -> FF) is a spike,
 # NOT terminal; the terminal is INCANT FINAL writing 0x12 (FINAL) into the held
-# ring's proper-type field. See objects/plan.md "The win is two stages".
-_FINAL_RING_TOKEN = 0x12
+# ring's proper-type field. `state.holds_final_ring` reports that fact (state.py).
 
 
 def _detect_kills(previous, current):
@@ -115,15 +114,6 @@ def _survival_potential(state):
     """Phi — the distance to death, the only potential with a formula today."""
     return state.player_strength - state.m0221
 
-
-def _holds_final_ring(state):
-    """True when a hand holds the FINAL ring (proper-type token 0x12)."""
-    if state.hands is None:
-        return False
-    for hand in state.hands:
-        if int(hand[1]) == _FINAL_RING_TOKEN:
-            return True
-    return False
 
 
 class DaggorathReward:
@@ -182,7 +172,7 @@ class DaggorathReward:
         if terminated:
             if current.game_mode == 0xFF:
                 reward += _DEATH_REWARD
-            elif _holds_final_ring(current):
+            elif current.holds_final_ring:
                 reward += _WIN_REWARD
 
         # Kill spike: every kill pays, so the agent learns early that combat

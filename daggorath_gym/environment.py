@@ -83,7 +83,11 @@ class DaggorathEnv(gym.Env):
         if command_index is not None:
             self._emulator.send(DaggorathCommand(index=command_index))
 
-        # Receive next game state
+        # Receive the next game state. Step/frame sync is "latest": one
+        # record per recv(), merged into the latest known state. The command's
+        # effect may land a step later — harmless, because the reward wrapper
+        # computes from state transitions. "Wait-for-settle" (perfectMatch on
+        # the wire) is the follow-up.
         state = self._emulator.recv()
         self._current_state = state
 
@@ -111,11 +115,17 @@ class DaggorathEnv(gym.Env):
         return 0.0
 
     def _check_terminated(self, state) -> bool:
-        raise NotImplementedError(
-            "Termination conditions not designed. See plans/termination.md (TBD)."
+        # Death or the win. Death has two signals (belt-and-suspenders):
+        # game_mode flips 0x00 -> 0xFF, and player_strength < m0221 is the
+        # game's own death condition. The win is two-stage: holding the FINAL
+        # ring (0x12) after INCANT FINAL — the wizard kill is NOT terminal.
+        return (
+            state.game_mode == 0xFF
+            or state.player_strength < state.m0221
+            or state.holds_final_ring
         )
 
     def _check_truncated(self, state) -> bool:
-        raise NotImplementedError(
-            "Truncation conditions not designed."
-        )
+        # No built-in time limit; truncation is gymnasium's TimeLimit wrapper,
+        # applied externally. The environment itself never truncates.
+        return False

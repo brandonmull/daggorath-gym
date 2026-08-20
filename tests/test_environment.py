@@ -31,7 +31,7 @@ importlib.reload(daggorath_gym)
 from daggorath_gym.commands import NUM_OBJECT_SPECIFIERS, NUM_TEMPLATES
 from daggorath_gym.emulator import IpcConfig
 from daggorath_gym.environment import DaggorathEnv
-from daggorath_gym.state import FIELDS
+from daggorath_gym.state import FIELDS, FRAME_LEN, OBJECTS_BYTES, DaggorathState
 
 _IPC = IpcConfig(state_fifo_path="/tmp/daggorath-test-env", command_port=15201)
 _IPC_CONTRACT = IpcConfig(
@@ -92,6 +92,65 @@ def test_gymnasium_consumer_contract():
         env.close()
 
 
-# step() is blocked until reward and termination are designed.
-# Both _compute_reward and _check_terminated raise NotImplementedError.
-# When those are implemented, add tests here for the full step cycle.
+# Termination is pure and MAME-free, so it is tested directly on hand-built
+# states below. The full step cycle (send command -> observation) still needs
+# a running MAME instance.
+
+
+def _build_frame(**field_values):
+    frame = bytearray(FRAME_LEN)
+    offsets = {name: (offset, width) for name, offset, width in FIELDS}
+    for name, value in field_values.items():
+        offset, width = offsets[name]
+        if width == 1:
+            frame[offset] = value & 0xFF
+        else:
+            frame[offset] = value & 0xFF
+            frame[offset + 1] = (value >> 8) & 0xFF
+    return bytes(frame)
+
+
+def _build_objects_bytes(hands=()):
+    payload = bytearray([0xFF] * OBJECTS_BYTES)
+    for index, (class_byte, proper, reveal) in enumerate(hands):
+        offset = index * 3
+        payload[offset] = class_byte
+        payload[offset + 1] = proper
+        payload[offset + 2] = reveal
+    return bytes(payload)
+
+
+def test_termination_death_by_game_mode():
+    """game_mode flipping to 0xFF terminates (death)."""
+    env = DaggorathEnv()
+    state = DaggorathState(_build_frame(game_mode=0xFF))
+    assert env._check_terminated(state) is True
+
+
+def test_termination_death_by_strength():
+    """player_strength < m0221 terminates (the game's own death condition)."""
+    env = DaggorathEnv()
+    state = DaggorathState(_build_frame(player_strength=10, m0221=11))
+    assert env._check_terminated(state) is True
+
+
+def test_termination_win():
+    """Holding the FINAL ring (0x12) terminates (the win)."""
+    env = DaggorathEnv()
+    state = DaggorathState(
+        _build_frame(), objects=_build_objects_bytes(hands=((1, 0x12, 0),))
+    )
+    assert env._check_terminated(state) is True
+
+
+def test_not_terminated():
+    """A normal live-play state does not terminate."""
+    env = DaggorathEnv()
+    state = DaggorathState(_build_frame(player_strength=100, m0221=0))
+    assert env._check_terminated(state) is False
+
+
+def test_not_truncated():
+    """The environment never truncates on its own."""
+    env = DaggorathEnv()
+    assert env._check_truncated(DaggorathState(_build_frame())) is False

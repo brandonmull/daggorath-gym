@@ -502,3 +502,17 @@ def test_as_perceived_map_feature_fill():
     assert perceived["map"][1, 15, 16] == 3   # hole-floor
     assert perceived["map"][1, 14, 16] == 0   # none
     assert perceived["map"][1, 13, 16] == 0xFF  # unseen
+
+def test_holds_final_ring_true():
+    """holds_final_ring is True when a hand holds the FINAL ring (0x12)."""
+    objects = _build_objects_bytes(hands=((1, 0x12, 0),))  # RING, FINAL
+    state = DaggorathState(_build_test_frame(), objects=objects)
+    assert state.holds_final_ring is True
+
+
+def test_holds_final_ring_false():
+    """holds_final_ring is False when no hand holds the FINAL ring."""
+    objects = _build_objects_bytes(hands=((4, 0x11, 0),))  # WOODEN SWORD
+    state = DaggorathState(_build_test_frame(), objects=objects)
+    assert state.holds_final_ring is False
+    assert DaggorathState(_build_test_frame()).holds_final_ring is False
