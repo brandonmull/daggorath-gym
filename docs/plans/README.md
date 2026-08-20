@@ -48,4 +48,5 @@ When a plan predates this format, extract its `conversation.md` from the saved s
 | screen | Missing — predates the conversation; extraction pending |
 | perception | Started — act-first, line-of-sight gate, no-memory, and modal-perception threads recorded |
 | curriculum | Not started — items gathered, structure pending |
+| deployment | Extracted |
 
