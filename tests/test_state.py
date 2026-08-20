@@ -132,6 +132,23 @@ def test_command_text_is_stored():
     assert state.command_text == "PULL LEFT TORCH"
 
 
+def test_command_rejected_false_by_default():
+    """command_rejected is False when the command area shows no rejection."""
+    assert DaggorathState(_build_test_frame()).command_rejected is False
+
+
+def test_command_rejected_detects_reject_text():
+    """command_rejected is True when the command area shows the game's '???'."""
+    state = DaggorathState(_build_test_frame(), command_text="???")
+    assert state.command_rejected is True
+
+
+def test_command_rejected_false_for_normal_text():
+    """command_rejected is False for an accepted command echo."""
+    state = DaggorathState(_build_test_frame(), command_text="PULL LEFT TORCH")
+    assert state.command_rejected is False
+
+
 # ---- immutability ----------------------------------------------------------
 
 def test_immutability():

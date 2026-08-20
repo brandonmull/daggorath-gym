@@ -225,7 +225,9 @@ class DaggorathState:
     attribute raises AttributeError.
 
     `heart_rate` is a derived attribute (beats per second) computed from
-    `heart_beat_interval`; it is not part of the wire format or as_perceived().
+    `heart_beat_interval`; `command_rejected` is derived from `command_text`
+    (True when the command area shows the game's "???" rejection). Neither is
+    part of the wire format or as_perceived().
     The world attributes — `maze`, `creatures`, `hands`, `pack`, `objects`,
     `holes_ladders` — hold the true, ungated state decoded from the M/C/O/H
     records, and are None until the corresponding record has arrived.
@@ -236,6 +238,7 @@ class DaggorathState:
         + (
             "heart_rate",
             "command_text",
+            "command_rejected",
             "maze",
             "creatures",
             "hands",
@@ -262,6 +265,11 @@ class DaggorathState:
         object.__setattr__(self, "heart_rate", 0.0 if interval == 0 else 60.0 / interval)
 
         object.__setattr__(self, "command_text", command_text)
+
+        # The game prints "???" in the command area when it rejects the last
+        # command — a true-state fact the reward wrapper prices, not a
+        # perception channel.
+        object.__setattr__(self, "command_rejected", "???" in command_text)
 
         object.__setattr__(self, "maze", decode_maze(maze) if maze is not None else None)
         object.__setattr__(

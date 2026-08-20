@@ -44,7 +44,8 @@ When a plan predates this format, extract its `conversation.md` from the saved s
 |--------|-------------|
 | reward, creatures, objects, sound, navigation, events | Extracted |
 | state | Partial — the strength controversy only; the module's own design predates the conversation |
-| commands, screen | Missing — predate the conversation; extraction pending |
+| commands | Extracted — factored action space and the invalid-command argument |
+| screen | Missing — predates the conversation; extraction pending |
 | perception | Started — act-first, line-of-sight gate, no-memory, and modal-perception threads recorded |
 | curriculum | Not started — items gathered, structure pending |
 
