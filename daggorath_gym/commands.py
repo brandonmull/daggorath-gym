@@ -2,6 +2,8 @@
 
 Builds the ordered list of 154 valid command phrases at import time.
 The phrase list's order is the shared contract with Lua's COMMAND_PHRASES.
+Also builds the factored action space — 26 command templates × 31 object
+specifier indices — and maps a (template, object) pair to a wire index.
 """
 
 from dataclasses import dataclass
@@ -88,6 +90,14 @@ _SPECIFIER_INDEX_BY_TOKEN = {
     for token, (class_name, name) in _PROPER_TYPE_BY_TOKEN.items()
 }
 
+# Built at import: specifier index → incantation word, for the ring proper
+# names only. Only these nine object indices are syntactically valid INCANT
+# targets; any other index is invalid for that template.
+_RING_NAME_BY_SPECIFIER_INDEX = {
+    _OBJECT_SPECIFIER_INDEX.index(f"{name} RING"): name
+    for name in _OBJECT_PROPER_NAMES["RING"]
+}
+
 
 def derive_specifier_index(class_byte: int, proper_token: int, reveal_threshold: int) -> int:
     """Derive the perceived object specifier index (0–30) from raw bytes.
@@ -149,6 +159,78 @@ _COMMAND_PHRASES = _build_command_phrases()
 
 # Total number of valid command phrases
 NUM_COMMANDS = len(_COMMAND_PHRASES)
+
+
+@dataclass(frozen=True)
+class _CommandTemplate:
+    """One slot of the factored action space's template axis.
+
+    An object-less template carries its full ``phrase``; a specifier
+    template carries a ``word`` and optional ``direction`` and fills its
+    object slot from the object axis (GET/PULL), or — for INCANT — accepts
+    only the ring proper names.
+    """
+
+    phrase: str | None = None
+    word: str | None = None
+    direction: str | None = None
+
+
+# The 26 templates in axis-0 order: 21 object-less, then GET/PULL (object
+# slot from the specifier index) and INCANT (ring names only).
+_COMMAND_TEMPLATES = (
+    _CommandTemplate(phrase="MOVE"),
+    _CommandTemplate(phrase="MOVE BACK"),
+    _CommandTemplate(phrase="MOVE LEFT"),
+    _CommandTemplate(phrase="MOVE RIGHT"),
+    _CommandTemplate(phrase="TURN LEFT"),
+    _CommandTemplate(phrase="TURN RIGHT"),
+    _CommandTemplate(phrase="TURN AROUND"),
+    _CommandTemplate(phrase="CLIMB UP"),
+    _CommandTemplate(phrase="CLIMB DOWN"),
+    _CommandTemplate(phrase="ATTACK LEFT"),
+    _CommandTemplate(phrase="ATTACK RIGHT"),
+    _CommandTemplate(phrase="USE LEFT"),
+    _CommandTemplate(phrase="USE RIGHT"),
+    _CommandTemplate(phrase="DROP LEFT"),
+    _CommandTemplate(phrase="DROP RIGHT"),
+    _CommandTemplate(phrase="STOW LEFT"),
+    _CommandTemplate(phrase="STOW RIGHT"),
+    _CommandTemplate(phrase="REVEAL LEFT"),
+    _CommandTemplate(phrase="REVEAL RIGHT"),
+    _CommandTemplate(phrase="EXAMINE"),
+    _CommandTemplate(phrase="LOOK"),
+    _CommandTemplate(word="GET", direction="LEFT"),
+    _CommandTemplate(word="GET", direction="RIGHT"),
+    _CommandTemplate(word="PULL", direction="LEFT"),
+    _CommandTemplate(word="PULL", direction="RIGHT"),
+    _CommandTemplate(word="INCANT"),
+)
+
+# The two axes of the factored action space.
+NUM_TEMPLATES = len(_COMMAND_TEMPLATES)
+NUM_OBJECT_SPECIFIERS = len(_OBJECT_SPECIFIER_INDEX)
+
+
+def derive_command_index(template: int, object_index: int) -> int | None:
+    """Map a factored action (template, object) to a wire command index.
+
+    Object-less templates ignore the object index and return their fixed
+    phrase's index. GET and PULL fill the object slot from the specifier
+    index. INCANT accepts only the nine ring proper names; any other object
+    index is syntactically invalid and returns None, which the environment
+    treats as a no-op.
+    """
+    spec = _COMMAND_TEMPLATES[template]
+    if spec.phrase is not None:
+        return _COMMAND_PHRASES.index(spec.phrase)
+    if spec.word == "INCANT":
+        ring_name = _RING_NAME_BY_SPECIFIER_INDEX.get(object_index)
+        if ring_name is None:
+            return None
+        return _COMMAND_PHRASES.index(f"INCANT {ring_name}")
+    specifier = _OBJECT_SPECIFIER_INDEX[object_index]
+    return _COMMAND_PHRASES.index(f"{spec.word} {spec.direction} {specifier}")
 
 
 @dataclass(frozen=True)

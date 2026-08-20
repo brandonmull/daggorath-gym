@@ -21,11 +21,14 @@ Growth plan:
 import pytest
 
 from daggorath_gym.commands import (
+    NUM_OBJECT_SPECIFIERS,
+    NUM_TEMPLATES,
     _COMMAND_PHRASES,
     _OBJECT_SPECIFIER_INDEX,
     _PROPER_TYPE_BY_TOKEN,
     _SPECIFIER_INDEX_BY_TOKEN,
     DaggorathCommand,
+    derive_command_index,
     derive_specifier_index,
 )
 
@@ -154,3 +157,37 @@ def test_specifier_table_matches_proper_names():
 def test_bare_classes_are_indices_zero_through_five():
     """The bare-class specifier indices 0–5 are the class bytes."""
     assert _OBJECT_SPECIFIER_INDEX[:6] == ["FLASK", "RING", "SCROLL", "SHIELD", "SWORD", "TORCH"]
+
+
+# ---- factored action space --------------------------------------------------
+
+def test_template_and_object_counts():
+    """The factored action space is 26 templates × 31 object specifiers."""
+    assert NUM_TEMPLATES == 26
+    assert NUM_OBJECT_SPECIFIERS == 31
+
+
+def test_derive_command_index_object_less_ignores_object():
+    """An object-less template maps to its fixed phrase whatever the object."""
+    move_index = _COMMAND_PHRASES.index("MOVE")
+    assert derive_command_index(0, 0) == move_index
+    assert derive_command_index(0, 30) == move_index
+
+
+def test_derive_command_index_get_fills_specifier():
+    """GET/PULL templates fill their specifier slot from the object index."""
+    assert derive_command_index(21, 5) == _COMMAND_PHRASES.index("GET LEFT TORCH")
+    assert derive_command_index(24, 26) == _COMMAND_PHRASES.index("PULL RIGHT WOODEN SWORD")
+
+
+def test_derive_command_index_incant_ring_names():
+    """INCANT accepts the nine ring proper names at their specifier indices."""
+    assert derive_command_index(25, 10) == _COMMAND_PHRASES.index("INCANT ENERGY")
+    assert derive_command_index(25, 18) == _COMMAND_PHRASES.index("INCANT VULCAN")
+
+
+def test_derive_command_index_incant_rejects_non_ring():
+    """INCANT with a non-ring object is syntactically invalid (None)."""
+    assert derive_command_index(25, 0) is None   # FLASK
+    assert derive_command_index(25, 4) is None   # SWORD
+    assert derive_command_index(25, 26) is None  # WOODEN SWORD

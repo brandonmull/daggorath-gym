@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Force-reload to bypass stale editable-install cache
 import daggorath_gym
 importlib.reload(daggorath_gym)
-from daggorath_gym.commands import NUM_COMMANDS
+from daggorath_gym.commands import NUM_OBJECT_SPECIFIERS, NUM_TEMPLATES
 from daggorath_gym.emulator import IpcConfig
 from daggorath_gym.environment import DaggorathEnv
 from daggorath_gym.state import FIELDS
@@ -70,12 +70,13 @@ def test_gymnasium_consumer_contract():
     env = DaggorathEnv(ipc_config=_IPC_CONTRACT)
     try:
         # ---------- action space ----------
-        assert isinstance(env.action_space, spaces.Discrete)
-        assert env.action_space.n == NUM_COMMANDS
+        assert isinstance(env.action_space, spaces.MultiDiscrete)
+        assert env.action_space.nvec.tolist() == [NUM_TEMPLATES, NUM_OBJECT_SPECIFIERS]
 
         action = env.action_space.sample()
-        assert isinstance(action, (int, np.integer))
-        assert 0 <= int(action) < NUM_COMMANDS
+        assert action.shape == (2,)
+        assert 0 <= int(action[0]) < NUM_TEMPLATES
+        assert 0 <= int(action[1]) < NUM_OBJECT_SPECIFIERS
 
         # ---------- observation space ----------
         assert isinstance(env.observation_space, spaces.Dict)
