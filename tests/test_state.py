@@ -20,6 +20,9 @@ from daggorath_gym.state import (
     FRAME_LEN,
     HAND_COUNT,
     HANDS_BYTES,
+    HOLE_LADDER_CAPACITY,
+    HOLE_LADDER_RAW_BYTES,
+    HOLES_LADDERS_BYTES,
     MAP_SIZE,
     MAZE_BYTES,
     OBJECT_RAW_BYTES,
@@ -28,6 +31,7 @@ from daggorath_gym.state import (
     PACK_CAPACITY,
     DaggorathState,
     decode_creatures,
+    decode_holes_ladders,
     decode_maze,
     decode_objects,
 )
@@ -185,6 +189,25 @@ def test_decode_objects_layout():
     assert floor_objects[0][4] == 5
 
 
+def test_decode_holes_ladders_shape_and_layout():
+    """decode_holes_ladders yields a (2, 4, 3) array, ceiling then floor."""
+    payload = bytearray(HOLES_LADDERS_BYTES)
+    payload[0] = 0x01  # ceiling entry 0: ladder
+    payload[1] = 0x00  # Y
+    payload[2] = 0x17  # X
+    payload[12] = 0x00  # floor entry 0: hole (byte 12 = ceiling list's 12 bytes)
+    payload[13] = 0x0F
+    payload[14] = 0x04
+    holes_ladders = decode_holes_ladders(bytes(payload))
+    assert holes_ladders.shape == (2, HOLE_LADDER_CAPACITY, HOLE_LADDER_RAW_BYTES)
+    assert holes_ladders[0][0][0] == 0x01
+    assert holes_ladders[0][0][1] == 0x00
+    assert holes_ladders[0][0][2] == 0x17
+    assert holes_ladders[1][0][0] == 0x00
+    assert holes_ladders[1][0][1] == 0x0F
+    assert holes_ladders[1][0][2] == 0x04
+
+
 def test_world_channels_are_none_when_absent():
     """A state without world records reports None for every world channel."""
     state = DaggorathState(_build_test_frame())
@@ -193,6 +216,7 @@ def test_world_channels_are_none_when_absent():
     assert state.hands is None
     assert state.pack is None
     assert state.objects is None
+    assert state.holes_ladders is None
 
 
 def test_world_channels_decode_when_present():
@@ -202,9 +226,11 @@ def test_world_channels_decode_when_present():
         maze=bytes(MAZE_BYTES),
         creatures=bytes(CREATURE_BYTES),
         objects=bytes(OBJECTS_BYTES),
+        holes_ladders=bytes(HOLES_LADDERS_BYTES),
     )
     assert state.maze.shape == (MAP_SIZE, MAP_SIZE)
     assert state.creatures.shape == (CREATURE_SLOTS, CREATURE_FIELDS)
     assert state.hands.shape == (HAND_COUNT, OBJECT_RAW_BYTES)
     assert state.pack.shape == (PACK_CAPACITY, OBJECT_RAW_BYTES)
     assert state.objects.shape == (FLOOR_OBJECT_CAPACITY, FLOOR_OBJECT_RAW_BYTES)
+    assert state.holes_ladders.shape == (2, HOLE_LADDER_CAPACITY, HOLE_LADDER_RAW_BYTES)

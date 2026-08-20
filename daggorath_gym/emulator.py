@@ -14,6 +14,7 @@ The state channel carries fixed-size tagged records (no delimiter):
     M  + 1024-byte maze                                maze changed
     C  + 128-byte creature array                       creatures changed
     O  + 70-byte object record                         objects changed
+    H  + 24-byte holes/ladders record                  holes/ladders changed
 """
 
 import os
@@ -30,6 +31,7 @@ from .screen import PIXEL_BYTES, decode_command_area
 from .state import (
     CREATURE_BYTES,
     FRAME_LEN,
+    HOLES_LADDERS_BYTES,
     MAZE_BYTES,
     OBJECTS_BYTES,
     DaggorathState,
@@ -44,6 +46,7 @@ _RECORD_LENGTHS = {
     b"M": 1 + MAZE_BYTES,
     b"C": 1 + CREATURE_BYTES,
     b"O": 1 + OBJECTS_BYTES,
+    b"H": 1 + HOLES_LADDERS_BYTES,
 }
 
 # Seconds to wait for the next state record before giving up.
@@ -99,6 +102,7 @@ class MameOperator:
         self._last_maze: Optional[bytes] = None
         self._last_creatures: Optional[bytes] = None
         self._last_objects: Optional[bytes] = None
+        self._last_holes_ladders: Optional[bytes] = None
 
     # ---------- lifecycle ----------
 
@@ -172,6 +176,7 @@ class MameOperator:
         self._last_maze = None
         self._last_creatures = None
         self._last_objects = None
+        self._last_holes_ladders = None
 
     # ---------- communication ----------
 
@@ -255,6 +260,7 @@ class MameOperator:
         maze = self._last_maze
         creatures = self._last_creatures
         objects = self._last_objects
+        holes_ladders = self._last_holes_ladders
 
         if tag in (b"S", b"B"):
             frame = record[1:1 + FRAME_LEN]
@@ -271,6 +277,8 @@ class MameOperator:
             creatures = record[1:1 + CREATURE_BYTES]
         elif tag == b"O":
             objects = record[1:1 + OBJECTS_BYTES]
+        elif tag == b"H":
+            holes_ladders = record[1:1 + HOLES_LADDERS_BYTES]
 
         if frame is None:
             raise ConnectionError("Received a record before any numeric state")
@@ -280,12 +288,14 @@ class MameOperator:
         self._last_maze = maze
         self._last_creatures = creatures
         self._last_objects = objects
+        self._last_holes_ladders = holes_ladders
         return DaggorathState(
             frame,
             command_text=command_text,
             maze=maze,
             creatures=creatures,
             objects=objects,
+            holes_ladders=holes_ladders,
         )
 
     def _remove_stale_fifo(self) -> None:

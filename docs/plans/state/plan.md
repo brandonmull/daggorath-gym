@@ -100,8 +100,10 @@ All addresses were verified against the authoritative memory map ([`ram.md`](../
 | `at_cell_x` | 1 | Spatial | Grid column |
 | `at_cell_y` | 1 | Spatial | Grid row |
 | `at_heading` | 1 | Spatial | Facing direction |
-| `ambient_light` | 2 | World | Base dungeon illumination (u16, spikes when wizard dies) |
-| `effective_light` | 2 | World | The renderer's computed light level — `ambient_light` + lit-torch illumination; drives the sight reach (u16) |
+| `ambient_light_physical` | 1 | World | Base physical dungeon illumination (spikes when wizard dies) |
+| `ambient_light_magical` | 1 | World | Base magical dungeon illumination (spikes when wizard dies) |
+| `effective_light_physical` | 1 | World | The renderer's computed physical light — `ambient_light_physical` + `torch_physical_light`; drives the sight reach |
+| `effective_light_magical` | 1 | World | The renderer's computed magic light — `ambient_light_magical` + `torch_magic_light`; gates magic doors and magical creatures |
 | `torch_minutes` | 1 | Light | Lit torch's remaining minutes — via `torchPtr` (`0x0224:0225`); 0 when none lit |
 | `torch_physical_light` | 1 | Light | Lit torch's physical illumination — a factor of `effective_light` (via `torchPtr`) |
 | `torch_magic_light` | 1 | Light | Lit torch's magic illumination — a factor of `effective_light` (via `torchPtr`) |
@@ -112,7 +114,7 @@ All addresses were verified against the authoritative memory map ([`ram.md`](../
 | `player_fainting` | 1 | Body | Faint steps remaining — 0 means conscious |
 | `evil_wizard_dead` | 1 | Enemy | FF = wizard defeated |
 
-The light fields compose the sight equation (`C660`): `effective_light`'s physical byte is `ambient_light`'s physical byte plus `torch_physical_light`, and its magic byte is `ambient_light`'s magic byte plus `torch_magic_light`. Exposing the sum and its torch factors together lets the agent relate its torch to its ability to see. In normal play `ambient_light` is `0x0000` (only written at the Wizard's death), so the torch is effectively the whole of sight.
+The light fields compose the sight equation (`C660`): `effective_light_physical` is `ambient_light_physical` plus `torch_physical_light`, and `effective_light_magical` is `ambient_light_magical` plus `torch_magic_light`. Both the ambient base and the sums ship as two explicit fields rather than one packed u16 with the levels hidden in its bytes. Exposing the sums and their torch factors together lets the agent relate its torch to its ability to see. In normal play the ambient fields are `0` (only written at the Wizard's death), so the torch is effectively the whole of sight.
 
 The previous `heart_beat_countdown` field is dropped. It was the raw `heartCounter` (0x02AE) — a countdown that decrements on the CoCo's 60 Hz interrupt and reloads from `heartCounterRel` every time it reaches zero. It changes every frame, which makes change detection (see §2) impossible. It is the timer *mechanism*, not game state.
 
@@ -179,7 +181,7 @@ The order is the contract. If the two sides fall out of sync, all values shift a
 
 The previous system built a JSON string for each observation — about **250 bytes** of text, of which only ~10 were actual game data. On the emulated 6809 CPU running at ~0.89 MHz, string formatting eats into the frame budget.
 
-**Raw bytes** invert this: we send just the values in schema order. Twenty-one bytes carry all sixteen fields. The Lua side writes with simple `string.char()` calls — near-zero CPU cost. The Python side reads a byte string and hands it to the schema for deserialization.
+**Raw bytes** invert this: we send just the values in schema order. Twenty-one bytes carry all eighteen fields. The Lua side writes with simple `string.char()` calls — near-zero CPU cost. The Python side reads a byte string and hands it to the schema for deserialization.
 
 ```
 [00] [00] [16] [0C] [00] [00] [00] [00] [07] [64] [07] [00] [23] [00] [A0] [17] [00] [07] [28] [00] [00]
@@ -202,10 +204,11 @@ The state channel now carries **tagged records** instead of a bare frame. A reco
 | `M` | 1024-byte maze | The current level's maze edge bytes changed |
 | `C` | 128-byte creature array | A creature slot changed |
 | `O` | 70-byte object record | Hands, pack, or a floor object changed |
+| `H` | 24-byte holes/ladders record | A ceiling or floor connection changed |
 
 This is change detection, not batching. A record in the FIFO means "something meaningful changed." Identical frames are not written at all — replaced by a snapshot comparison in Lua (see §3).
 
-Python maintains the last-known frame and last-known text, so either can be omitted from a record and reconstructed on the other side. The `B` record is the unambiguous case where both changed in the same sampled frame. The three world records follow the same rule — each is written only when its own snapshot differs — and Python keeps the last-known maze, creature array, and object record so the world state reconstructs across records. The world records' layouts live in their modules' plans: the maze in `navigation/plan.md`, the creature array in `creatures/plan.md`, and the object record in `objects/plan.md`.
+Python maintains the last-known frame and last-known text, so either can be omitted from a record and reconstructed on the other side. The `B` record is the unambiguous case where both changed in the same sampled frame. The four world records follow the same rule — each is written only when its own snapshot differs — and Python keeps the last-known maze, creature array, object record, and holes/ladders record so the world state reconstructs across records. The world records' layouts live in their modules' plans: the maze and holes/ladders in `navigation/plan.md`, the creature array in `creatures/plan.md`, and the object record in `objects/plan.md`.
 
 ### Flyweight Pattern
 
@@ -247,7 +250,7 @@ The public API is `state.beginWatching(stateFile, config)` where `config` is `{ 
 | `_memory` | CPU program space, lazy-initialized on first frame |
 | `_framesElapsed` | Counter since `beginWatching()` was called |
 | `_frameSamplingRate` | From config |
-| `_stateSnapshot` | Last-emitted 16-byte numeric frame, for change detection |
+| `_stateSnapshot` | Last-emitted 21-byte numeric frame, for change detection |
 | `_pixelSnapshot` | Last-emitted 1024 pixel bytes + `comColor`, for change detection |
 
 Two internal functions do the work:
@@ -256,7 +259,7 @@ Two internal functions do the work:
 _sampleState()
     → iterates SCHEMA
     → reads each address from _memory as u8 or u16 (little-endian)
-    → concatenates all values into a 16-byte string using string.char()
+    → concatenates all values into a 21-byte string using string.char()
 
 _readCommandAreaPixels()
     → reads comStart from 0x0390–0x0391 (big-endian)
@@ -324,7 +327,7 @@ Testing happens at two levels:
 **Integration test** — launches actual MAME. Lives in `tests/test_emulator.py`. Receives records, constructs `DaggorathState`, asserts field values match known game-startup values, and verifies the first record is a `B`.
 
 **Unit tests** — lives in `tests/test_state.py` (standalone file, no MAME needed, no unified test file). Tests:
-- Schema has 16 fields, `FRAME_LEN` = 21
+- Schema has 18 fields, `FRAME_LEN` = 21
 - `unpack()` with known test bytes → correct typed dict
 - `DaggorathState(raw)` construction → attribute access via `__slots__`
 - `DaggorathState` immutability (`__setattr__` raises `AttributeError`)
@@ -342,7 +345,7 @@ Testing happens at two levels:
 
 `state.beginWatching(stateFile, config)` is the entry point.
 
-The schema is a constant named `SCHEMA` — an ordered array of `{ name, addr, width }` tables (16 entries, listed in §1). The three torch fields carry `torchOffset` instead of `addr` and are read through `torchPtr`, the pointer to the lit torch (0 when none lit). The byte order is the shared contract with `DaggorathStateSchema.FIELDS` in Python.
+The schema is a constant named `SCHEMA` — an ordered array of `{ name, addr, width }` tables (18 entries, listed in §1). The three torch fields carry `torchOffset` instead of `addr` and are read through `torchPtr`, the pointer to the lit torch (0 when none lit). The byte order is the shared contract with `DaggorathStateSchema.FIELDS` in Python.
 
 ```
 state.beginWatching(stateFile, config)
@@ -367,7 +370,7 @@ per-frame notifier:
 
 Two classes: `DaggorathStateSchema` (flyweight) and `DaggorathState` (immutable value object).
 
-The field definitions are a class attribute named `FIELDS` — a tuple of `(name, offset, width)` 3-tuples in the same order as Lua's `SCHEMA`. No dataclass wrapper. `FRAME_LEN` is 21 (11 u8 + 5 u16 fields).
+The field definitions are a class attribute named `FIELDS` — a tuple of `(name, offset, width)` 3-tuples in the same order as Lua's `SCHEMA`. No dataclass wrapper. `FRAME_LEN` is 21 (15 u8 + 3 u16 fields).
 
 ```
 _schema.unpack(data)
@@ -385,7 +388,7 @@ DaggorathState(data)
 
 as_perceived()
     → returns the perceived-state Dict
-    → fills scalars with the sixteen self-fields
+    → fills scalars with the eighteen self-fields
     → zero-fills the world channels (hands, pack, creatures, objects, map) —
       not sampled yet, so their zeros are stubs, not an empty world
     → applies the perception gates (line-of-sight, mode, light) once the

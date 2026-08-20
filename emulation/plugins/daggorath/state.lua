@@ -13,6 +13,7 @@
 --   "M" + 1024-byte maze                             maze changed
 --   "C" + 128-byte creature array                    creatures changed
 --   "O" + 70-byte object record                      objects changed
+--   "H" + 24-byte holes/ladders record               holes/ladders changed
 
 local state = {}
 
@@ -86,6 +87,20 @@ local EMPTY_FLOOR_OBJECT = string.char(
     OBJECT_SENTINEL, OBJECT_SENTINEL, OBJECT_SENTINEL,
     OBJECT_SENTINEL, OBJECT_SENTINEL)
 
+-- Holes and ladders. The game keeps them in a hand-authored ROM table, one
+-- list per level boundary: a run of 3-byte entries (type, Y, X) ended by an
+-- 0x80 sentinel. currentHoles points at the current level's ceiling list; the
+-- next list after it is the floor list. Each boundary holds at most four.
+local CURRENT_HOLES_HI = 0x0286
+local CURRENT_HOLES_LO = 0x0287
+local HOLE_LADDER_RAW_BYTES = 3
+local HOLE_LADDER_CAPACITY = 4
+local HOLE_LADDER_LIST_END = 0x80
+local HOLES_LADDERS_BYTES = 2 * HOLE_LADDER_CAPACITY * HOLE_LADDER_RAW_BYTES
+local HOLE_LADDER_SENTINEL = 0xFF
+local EMPTY_HOLE_LADDER = string.char(
+    HOLE_LADDER_SENTINEL, HOLE_LADDER_SENTINEL, HOLE_LADDER_SENTINEL)
+
 -- Schema: ordered array of { name, addr, width } tables. The lit torch's three
 -- fields use { name, torchOffset, width } instead of addr — they are read
 -- through torchPtr, the game's pointer to the lit torch (0 = none lit).
@@ -96,8 +111,10 @@ local SCHEMA = {
     { name = "atCellX",              addr = 0x0214, width = 1 },
     { name = "atCellY",              addr = 0x0213, width = 1 },
     { name = "atHeading",            addr = 0x0223, width = 1 },
-    { name = "ambientLight",         addr = 0x0226, width = 2 },
-    { name = "effectiveLight",       addr = 0x026E, width = 2 },
+    { name = "ambientLightPhysical",   addr = 0x0226, width = 1 },
+    { name = "ambientLightMagical",    addr = 0x0227, width = 1 },
+    { name = "effectiveLightPhysical", addr = 0x026E, width = 1 },
+    { name = "effectiveLightMagical",  addr = 0x026F, width = 1 },
     { name = "torchMinutes",         torchOffset = 6,  width = 1 },
     { name = "torchPhysicalLight",   torchOffset = 7,  width = 1 },
     { name = "torchMagicLight",      torchOffset = 8,  width = 1 },
@@ -120,6 +137,7 @@ local _comColorSnapshot = nil
 local _mazeSnapshot = nil
 local _creatureSnapshot = nil
 local _objectSnapshot = nil
+local _holesLaddersSnapshot = nil
 local _frameSubscription = nil
 
 local function _getMemorySpace()
@@ -295,6 +313,43 @@ local function _sampleObjects()
     return result
 end
 
+-- Read the holes/ladders record: the ceiling list, then the floor list, each
+-- a run of (type, Y, X) entries ended by the game's 0x80 sentinel and capped
+-- at HOLE_LADDER_CAPACITY, with empty slots sentinel-filled.
+local function _sampleHolesLadders()
+    local ok, result = pcall(function()
+        local bytes = {}
+        local pointer = _memory:read_u8(CURRENT_HOLES_HI) * 256
+            + _memory:read_u8(CURRENT_HOLES_LO)
+
+        for _ = 1, 2 do
+            local count = 0
+            while true do
+                local holeType = _memory:read_u8(pointer)
+                pointer = pointer + 1
+                if holeType >= HOLE_LADDER_LIST_END then
+                    break
+                end
+                if count < HOLE_LADDER_CAPACITY then
+                    bytes[#bytes + 1] = string.char(
+                        holeType,
+                        _memory:read_u8(pointer),
+                        _memory:read_u8(pointer + 1))
+                end
+                pointer = pointer + 2
+                count = count + 1
+            end
+            for _ = count, HOLE_LADDER_CAPACITY - 1 do
+                bytes[#bytes + 1] = EMPTY_HOLE_LADDER
+            end
+        end
+
+        return table.concat(bytes)
+    end)
+    if not ok then return nil end
+    return result
+end
+
 -- Write one tagged record to the FIFO in a single call.
 local function _writeRecord(kind, frame, comColor, pixels)
     local pieces = { kind }
@@ -400,6 +455,12 @@ local function _onFrame()
         _writeWorldRecord("O", objects)
         _objectSnapshot = objects
     end
+
+    local holesLadders = _sampleHolesLadders()
+    if holesLadders and holesLadders ~= _holesLaddersSnapshot then
+        _writeWorldRecord("H", holesLadders)
+        _holesLaddersSnapshot = holesLadders
+    end
 end
 
 -- Public: start watching game state.
@@ -413,6 +474,7 @@ function state.beginWatching(stateFile, config)
     _mazeSnapshot = nil
     _creatureSnapshot = nil
     _objectSnapshot = nil
+    _holesLaddersSnapshot = nil
 
     if config and config.frame_sampling_rate then
         _frameSamplingRate = config.frame_sampling_rate
@@ -433,6 +495,7 @@ function state.onReset()
     _mazeSnapshot = nil
     _creatureSnapshot = nil
     _objectSnapshot = nil
+    _holesLaddersSnapshot = nil
 end
 
 return state

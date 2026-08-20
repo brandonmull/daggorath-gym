@@ -20,8 +20,10 @@ FIELDS: list[tuple[str, int, int]] = [
     ("at_cell_x", 2, 1),
     ("at_cell_y", 3, 1),
     ("at_heading", 4, 1),
-    ("ambient_light", 5, 2),
-    ("effective_light", 7, 2),
+    ("ambient_light_physical", 5, 1),
+    ("ambient_light_magical", 6, 1),
+    ("effective_light_physical", 7, 1),
+    ("effective_light_magical", 8, 1),
     ("torch_minutes", 9, 1),
     ("torch_physical_light", 10, 1),
     ("torch_magic_light", 11, 1),
@@ -33,7 +35,7 @@ FIELDS: list[tuple[str, int, int]] = [
     ("evil_wizard_dead", 20, 1),
 ]
 
-# Total frame length in bytes: 11 u8 + 5 u16 = 11 + 10 = 21
+# Total frame length in bytes: 15 u8 + 3 u16 = 15 + 6 = 21
 FRAME_LEN = 21
 
 # Number of fields
@@ -62,6 +64,12 @@ PACK_BYTES = PACK_CAPACITY * OBJECT_RAW_BYTES
 FLOOR_OBJECTS_BYTES = FLOOR_OBJECT_CAPACITY * FLOOR_OBJECT_RAW_BYTES
 OBJECTS_BYTES = HANDS_BYTES + PACK_BYTES + FLOOR_OBJECTS_BYTES
 
+# Holes/ladders wire sizes: two lists (ceiling then floor) × capacity 4 ×
+# a 3-byte entry (type, Y, X). The capacity matches the hand-authored ROM table.
+HOLE_LADDER_RAW_BYTES = 3
+HOLE_LADDER_CAPACITY = 4
+HOLES_LADDERS_BYTES = 2 * HOLE_LADDER_CAPACITY * HOLE_LADDER_RAW_BYTES
+
 # The perceived state — what the policy sees — is the true state passed
 # through the perception gates (line-of-sight, display mode, light), reported
 # in absolute coordinates; agent-side wrappers translate to relative. Only the
@@ -73,7 +81,7 @@ PERCEIVED_SPACE = spaces.Dict({
     "pack": spaces.Box(low=0, high=255, shape=(PACK_CAPACITY,), dtype=np.uint8),
     "creatures": spaces.Box(low=0, high=255, shape=(CREATURE_SLOTS, 4), dtype=np.uint8),
     "objects": spaces.Box(low=0, high=255, shape=(FLOOR_OBJECT_CAPACITY, 3), dtype=np.uint8),
-    "map": spaces.Box(low=0, high=255, shape=(MAP_SIZE, MAP_SIZE), dtype=np.uint8),
+    "map": spaces.Box(low=0, high=255, shape=(2, MAP_SIZE, MAP_SIZE), dtype=np.uint8),
 })
 
 
@@ -151,6 +159,18 @@ def decode_objects(payload: bytes) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return hands, pack, floor_objects
 
 
+def decode_holes_ladders(payload: bytes) -> np.ndarray:
+    """Decode a 24-byte holes/ladders record into a (2, 4, 3) uint8 array.
+
+    Axis 0 is the list — index 0 the ceiling list (climb up), index 1 the
+    floor list (climb down). Each entry is type (0 hole, 1 ladder), Y, X;
+    empty slots carry a 0xFF type.
+    """
+    return np.frombuffer(payload, dtype=np.uint8).reshape(
+        2, HOLE_LADDER_CAPACITY, HOLE_LADDER_RAW_BYTES
+    )
+
+
 class DaggorathState:
     """Immutable value object holding one meaningful change of game state.
 
@@ -160,14 +180,23 @@ class DaggorathState:
 
     `heart_rate` is a derived attribute (beats per second) computed from
     `heart_beat_interval`; it is not part of the wire format or as_perceived().
-    The world attributes — `maze`, `creatures`, `hands`, `pack`, `objects` —
-    hold the true, ungated state decoded from the M/C/O records, and are None
-    until the corresponding record has arrived.
+    The world attributes — `maze`, `creatures`, `hands`, `pack`, `objects`,
+    `holes_ladders` — hold the true, ungated state decoded from the M/C/O/H
+    records, and are None until the corresponding record has arrived.
     """
 
     __slots__ = (
         tuple(name for name, _, _ in FIELDS)
-        + ("heart_rate", "command_text", "maze", "creatures", "hands", "pack", "objects")
+        + (
+            "heart_rate",
+            "command_text",
+            "maze",
+            "creatures",
+            "hands",
+            "pack",
+            "objects",
+            "holes_ladders",
+        )
     )
 
     def __init__(
@@ -177,6 +206,7 @@ class DaggorathState:
         maze: bytes | None = None,
         creatures: bytes | None = None,
         objects: bytes | None = None,
+        holes_ladders: bytes | None = None,
     ) -> None:
         values = _schema.unpack(data)
         for name, _, _ in FIELDS:
@@ -201,6 +231,12 @@ class DaggorathState:
             object.__setattr__(self, "pack", pack)
             object.__setattr__(self, "objects", floor_objects)
 
+        object.__setattr__(
+            self,
+            "holes_ladders",
+            decode_holes_ladders(holes_ladders) if holes_ladders is not None else None,
+        )
+
     def __setattr__(self, name: str, value: object) -> None:
         raise AttributeError(
             f"DaggorathState is immutable; cannot set '{name}'"
@@ -209,7 +245,7 @@ class DaggorathState:
     def as_perceived(self) -> dict[str, np.ndarray]:
         """Return the state as perceived by the player, as a Dict observation.
 
-        The scalars are the sixteen always-present self-fields. The world
+        The scalars are the eighteen always-present self-fields. The world
         channels (hands, pack, creatures, objects, map) are zeroed stubs —
         they are decoded onto the wire but not yet gated, so their zeros must
         not be read as an empty world. The perception gates (line-of-sight,
@@ -225,5 +261,5 @@ class DaggorathState:
             "pack": np.zeros(PACK_CAPACITY, dtype=np.uint8),
             "creatures": np.zeros((CREATURE_SLOTS, 4), dtype=np.uint8),
             "objects": np.zeros((FLOOR_OBJECT_CAPACITY, 3), dtype=np.uint8),
-            "map": np.zeros((MAP_SIZE, MAP_SIZE), dtype=np.uint8),
+            "map": np.zeros((2, MAP_SIZE, MAP_SIZE), dtype=np.uint8),
         }

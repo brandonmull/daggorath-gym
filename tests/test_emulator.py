@@ -35,6 +35,8 @@ from daggorath_gym.state import (
     FLOOR_OBJECT_CAPACITY,
     FLOOR_OBJECT_RAW_BYTES,
     HAND_COUNT,
+    HOLE_LADDER_CAPACITY,
+    HOLE_LADDER_RAW_BYTES,
     MAP_SIZE,
     OBJECT_RAW_BYTES,
     PACK_CAPACITY,
@@ -88,7 +90,7 @@ def test_state_as_perceived_shape():
 
 
 def test_world_channels_arrive_and_decode():
-    """M/C/O records arrive from MAME and decode into the true-state attributes."""
+    """M/C/O/H records arrive from MAME and decode into the true-state attributes."""
     operator = MameOperator(ipc_config=_IPC)
     try:
         operator.start()
@@ -99,6 +101,7 @@ def test_world_channels_arrive_and_decode():
                 state.maze is not None
                 and state.creatures is not None
                 and state.hands is not None
+                and state.holes_ladders is not None
             ):
                 break
 
@@ -108,5 +111,9 @@ def test_world_channels_arrive_and_decode():
         assert state.hands.shape == (HAND_COUNT, OBJECT_RAW_BYTES)
         assert state.pack.shape == (PACK_CAPACITY, OBJECT_RAW_BYTES)
         assert state.objects.shape == (FLOOR_OBJECT_CAPACITY, FLOOR_OBJECT_RAW_BYTES)
+        assert state.holes_ladders.shape == (2, HOLE_LADDER_CAPACITY, HOLE_LADDER_RAW_BYTES)
+        # Every level has at least one real connection, so the decoded table
+        # must not be all sentinel — a pointer-walk bug would empty it.
+        assert np.any(state.holes_ladders[..., 0] != 0xFF)
     finally:
         operator.stop()
