@@ -35,6 +35,8 @@ The display is modal, driven by `displayFunction` (`0x02B2–0x02B3`): `0xCE66` 
 - EXAMINE → the pack.
 - Either → state fields and hands.
 
+The mode gate needs `displayFunction` on the wire: it is read by the readiness gate today but not shipped in the state frame, so the frame must add a `display_function` field (or a LOOK/EXAMINE flag) before `as_perceived()` can apply this gate.
+
 ## No memory
 
 Perception is instantaneous. The environment holds no "visited cell," no "seen creature," no explored-vs-unexplored flags — nothing persists across steps. Memory is the agent's job, built in a wrapper that accumulates whatever the policy wants. For the POC the bar is immediate responsiveness — the agent must see the monster ahead and the wall ahead — even if it repeats itself; memory and action-space masking are deferred training-quality work, not correctness.

@@ -64,6 +64,26 @@ The perceived map — the observation's `map` channel — is two planes stacked 
 - **Direction convention follows the disassembly.** `at_heading` uses the maze's direction numbering — 0 = Up (North), 1 = Right (East), 2 = Down (South), 3 = Left (West) — matching the `CDA6` bit-position table.
 - **Holes and ladders are a second plane of the map image, not a separate channel.** They are static per-level geometry (the `currentHoles` table, `0x0286` → `CFFD`), not edge-encoded, so they ride a per-cell feature byte — 0 none, 1 hole in ceiling, 2 ladder in ceiling, 3 hole in floor, 4 ladder in floor — stacked beside the edge bytes as plane 1 of one `Box(2, 32, 32)` image, gated by the same corridor walk, `0xFF` unseen. Co-locating them with the edges keeps a ladder spatially aligned with the walls the CNN already sees; a separate Dict key would force the MLP to learn that correspondence with no spatial bias. They ship as the `H` record (see Wire).
 
+## Implementation
+
+Navigation lives in a pure-Python module, `daggorath_gym/navigation.py`, alongside `screen.py` and `state.py` — no MAME dependency. It consumes the decoded maze (the `(32, 32)` uint8 grid) and the player's frame, and returns what the player sees.
+
+The edge type values are `EDGE_OPEN` (0), `EDGE_NORMAL_DOOR` (1), `EDGE_MAGIC_DOOR` (2), and `EDGE_WALL` (3). The four directions are `DIRECTION_NORTH` (0), `DIRECTION_EAST` (1), `DIRECTION_SOUTH` (2), and `DIRECTION_WEST` (3) — the maze's own numbering. `REACH_CAP` (10) is the renderer's ten-cell walk bound.
+
+Two functions:
+
+decode_edge(maze, x, y, direction)
+    → returns the edge type out of cell (x, y) in the given direction
+    → shifts the cell's byte by twice the direction number and masks two bits
+
+walk_corridor(maze, x, y, heading, physical_light)
+    → walks the facing corridor from the player's cell, depth 0 outward
+    → at each cell, records it and each open lateral neighbor at that depth
+    → stops at the first facing edge that is not open
+    → caps the walk at min(physical_light, 10) cells
+    → returns a dict mapping each visible cell to its depth
+    → returns an empty dict when physical_light is 0 (blackout)
+
 ## Reference Documents
 
 | Document | What It Contains |
