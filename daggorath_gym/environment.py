@@ -11,7 +11,7 @@ from .commands import (
     DaggorathCommand,
     derive_command_index,
 )
-from .state import PERCEIVED_SPACE
+from .state import PERCEIVED_SPACE, DaggorathState
 
 
 class DaggorathEnv(gym.Env):
@@ -20,7 +20,8 @@ class DaggorathEnv(gym.Env):
     Action space: MultiDiscrete([26, 31]) — a (template, object) pair.
     Observation space: Dict — the perceived state (scalars + world channels).
     Lifecycle: owns a MameOperator; creates it on reset(), stops on close().
-    Status: reward and termination raise NotImplementedError (awaiting design).
+    Status: reward is a placeholder 0.0 (the reward wrapper computes the real
+    value); termination/truncation still raise NotImplementedError.
     """
 
     def __init__(self, mame_config=None, ipc_config=None):
@@ -37,6 +38,11 @@ class DaggorathEnv(gym.Env):
         self.observation_space = PERCEIVED_SPACE
 
         self._emulator: MameOperator | None = None
+
+        # The most recent true (ungated) state. The environment holds it so
+        # the reward wrapper can read it through the environment object —
+        # never through `info` or the observation (see reward/plan.md).
+        self._current_state: DaggorathState | None = None
 
     # ---- Gym interface ---------------------------------------------------
 
@@ -61,6 +67,7 @@ class DaggorathEnv(gym.Env):
         self._emulator.start()
 
         state = self._emulator.recv()
+        self._current_state = state
 
         info: dict = {}
         if seed is not None:
@@ -78,6 +85,7 @@ class DaggorathEnv(gym.Env):
 
         # Receive next game state
         state = self._emulator.recv()
+        self._current_state = state
 
         reward = self._compute_reward(state)
         terminated = self._check_terminated(state)
@@ -92,10 +100,15 @@ class DaggorathEnv(gym.Env):
 
     # ---- helpers ---------------------------------------------------------
 
+    @property
+    def current_state(self) -> DaggorathState | None:
+        """The most recent true (ungated) state, for the reward wrapper."""
+        return self._current_state
+
     def _compute_reward(self, state) -> float:
-        raise NotImplementedError(
-            "Reward function not designed. See plans/reward/plan.md."
-        )
+        # The environment returns a placeholder reward; the agent-side reward
+        # wrapper (reward.py) reads true state and computes the real scalar.
+        return 0.0
 
     def _check_terminated(self, state) -> bool:
         raise NotImplementedError(
