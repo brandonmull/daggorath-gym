@@ -77,6 +77,19 @@ Perception mirrors what the player perceives:
 - **The win is two stages; the terminal is the ring's transformation.** `wizard_dead` → `FF` is a large spike, not terminal — the episode continues to the ring. The terminal signal is `CmdINCANT`'s write of 0x12 (FINAL) into the held ring's proper-type field (slot + 9), which clears the word (slot + 7) and branches straight to `PlayerWins` (D5ED). There is no separate win-screen flag to trace: the Star Wizard beam and "BEHOLD! DESTINY AWAITS…" are transient renderings — `initBeamIn` (0x029E) is set and cleared inside the same beam call, and the game freezes in an endless loop (D621) — so the proper type 0x12 is the win's only persistent RAM signal.
 - **Pick-up and drop are not events — for now.** The location field (`slot + 5`) and the hand/pack chains show the transition reliably, but the holdings and sight potentials already reward the value of gaining an object — a separate pick-up spike would double-count. The agent observes holdings each step; only the Supreme Ring is a discrete event, via the two-stage win. Pick-up/drop events are a natural candidate for the deferred event-based architecture.
 
+## Implementation
+
+The derivation lives in `commands.py`. The object specifier index is its own ordering — the six bare classes first (0–5), then proper name + class (6–30), class-major — distinct from the command phrases, which interleave each class with its own proper names. The proper-type token → name table is a ROM fact — the Proper Names table at `D8F4` (catalogued in `commands.md` Appendix D), 25 tokens `0x00`–`0x18` — and the token → specifier-index table is built from it at import.
+
+derive_specifier_index(class_byte, proper_token, reveal_threshold)
+    → returns the perceived specifier index (0–30)
+    → when reveal_threshold is non-zero, returns the class byte — the six
+      class bytes 0–5 are themselves the bare-class indices, so the proper
+      type is dropped
+    → when reveal_threshold is zero, returns the full "proper name + class"
+      index looked up by proper token
+    → an empty slot's 0xFF class byte falls through the unrevealed branch to 0xFF
+
 ## Reference Documents
 
 | Document | What It Contains |

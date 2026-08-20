@@ -20,7 +20,14 @@ Growth plan:
 
 import pytest
 
-from daggorath_gym.commands import _COMMAND_PHRASES, DaggorathCommand
+from daggorath_gym.commands import (
+    _COMMAND_PHRASES,
+    _OBJECT_SPECIFIER_INDEX,
+    _PROPER_TYPE_BY_TOKEN,
+    _SPECIFIER_INDEX_BY_TOKEN,
+    DaggorathCommand,
+    derive_specifier_index,
+)
 
 
 # ---- structural checks -----------------------------------------------------
@@ -114,3 +121,36 @@ def test_command_rejects_out_of_range_index():
     """DaggorathCommand raises ValueError for indices beyond the list."""
     with pytest.raises(ValueError):
         DaggorathCommand(index=len(_COMMAND_PHRASES))
+
+
+# ---- object specifier derivation --------------------------------------------
+
+def test_derive_specifier_unrevealed_returns_class():
+    """An unrevealed object reports its bare class index (0–5)."""
+    for class_byte in range(6):
+        assert derive_specifier_index(class_byte, 0x00, 1) == class_byte
+
+
+def test_derive_specifier_revealed_returns_full_index():
+    """A revealed object reports its full proper-name + class index."""
+    index = derive_specifier_index(4, 0x11, 0)  # WOODEN SWORD
+    assert index == 26
+    assert _OBJECT_SPECIFIER_INDEX[index] == "WOODEN SWORD"
+
+
+def test_derive_specifier_empty_slot():
+    """An empty slot (0xFF class) reports 0xFF."""
+    assert derive_specifier_index(0xFF, 0xFF, 0xFF) == 0xFF
+
+
+def test_specifier_table_matches_proper_names():
+    """Every token's full specifier index points at the right specifier."""
+    assert len(_SPECIFIER_INDEX_BY_TOKEN) == 25
+    for token, (class_name, name) in _PROPER_TYPE_BY_TOKEN.items():
+        index = _SPECIFIER_INDEX_BY_TOKEN[token]
+        assert _OBJECT_SPECIFIER_INDEX[index] == f"{name} {class_name}"
+
+
+def test_bare_classes_are_indices_zero_through_five():
+    """The bare-class specifier indices 0–5 are the class bytes."""
+    assert _OBJECT_SPECIFIER_INDEX[:6] == ["FLASK", "RING", "SCROLL", "SHIELD", "SWORD", "TORCH"]

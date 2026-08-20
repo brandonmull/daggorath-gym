@@ -31,6 +31,37 @@ _OBJECT_PROPER_NAMES = {
     "TORCH": ["DEAD", "LUNAR", "PINE", "SOLAR"],
 }
 
+# ROM fact: proper-type token → (class name, proper name). The token is the
+# index into the Proper Names table at D8F4 (commands.md Appendix D) and is
+# stored in the object's proper-type field (slot + 9).
+_PROPER_TYPE_BY_TOKEN = {
+    0x00: ("RING", "SUPREME"),
+    0x01: ("RING", "JOULE"),
+    0x02: ("SWORD", "ELVISH"),
+    0x03: ("SHIELD", "MITHRIL"),
+    0x04: ("SCROLL", "SEER"),
+    0x05: ("FLASK", "THEWS"),
+    0x06: ("RING", "RIME"),
+    0x07: ("SCROLL", "VISION"),
+    0x08: ("FLASK", "ABYE"),
+    0x09: ("FLASK", "HALE"),
+    0x0A: ("TORCH", "SOLAR"),
+    0x0B: ("SHIELD", "BRONZE"),
+    0x0C: ("RING", "VULCAN"),
+    0x0D: ("SWORD", "IRON"),
+    0x0E: ("TORCH", "LUNAR"),
+    0x0F: ("TORCH", "PINE"),
+    0x10: ("SHIELD", "LEATHER"),
+    0x11: ("SWORD", "WOODEN"),
+    0x12: ("RING", "FINAL"),
+    0x13: ("RING", "ENERGY"),
+    0x14: ("RING", "ICE"),
+    0x15: ("RING", "FIRE"),
+    0x16: ("RING", "GOLD"),
+    0x17: ("FLASK", "EMPTY"),
+    0x18: ("TORCH", "DEAD"),
+}
+
 
 def _build_object_specifiers():
     """Build the 31 object specifiers: bare class, then each proper name + class."""
@@ -40,6 +71,37 @@ def _build_object_specifiers():
         for name in _OBJECT_PROPER_NAMES[cls]:
             specifiers.append(f"{name} {cls}")
     return specifiers
+
+
+# The 31 object specifiers in the shared observation/action index order:
+# the six bare classes first (0–5), then every proper name + class (6–30),
+# class-major. This is a separate ordering from the command phrases, which
+# interleave each class with its own proper names.
+_OBJECT_SPECIFIER_INDEX = list(_OBJECT_CLASSES) + [
+    f"{name} {cls}" for cls in _OBJECT_CLASSES for name in _OBJECT_PROPER_NAMES[cls]
+]
+
+# Built at import: proper-type token → the full "proper name + class"
+# specifier index — the revealed branch of the specifier derivation.
+_SPECIFIER_INDEX_BY_TOKEN = {
+    token: _OBJECT_SPECIFIER_INDEX.index(f"{name} {class_name}")
+    for token, (class_name, name) in _PROPER_TYPE_BY_TOKEN.items()
+}
+
+
+def derive_specifier_index(class_byte: int, proper_token: int, reveal_threshold: int) -> int:
+    """Derive the perceived object specifier index (0–30) from raw bytes.
+
+    The class byte is the bare specifier index while unrevealed — the six
+    class bytes 0–5 are themselves the bare-class indices, so dropping the
+    proper type means returning the class byte. Once revealed (reveal
+    threshold 0), the index is the full "proper name + class" specifier,
+    looked up by the proper-type token. An empty slot's 0xFF class byte falls
+    through the unrevealed branch to 0xFF.
+    """
+    if reveal_threshold != 0:
+        return class_byte
+    return _SPECIFIER_INDEX_BY_TOKEN[proper_token]
 
 
 def _build_command_phrases():
